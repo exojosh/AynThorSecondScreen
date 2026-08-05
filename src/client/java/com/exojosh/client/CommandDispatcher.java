@@ -1,5 +1,6 @@
 package com.exojosh.client;
 
+import com.exojosh.client.mixin.KeyBindingAccessor;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 
@@ -11,25 +12,41 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * Routes commands sent from the companion app to actual game actions.
  * Two command shapes:
  *
- *   1. A digit "1" through "9" -- selects that hotbar slot. Simulated the
- *      same way as everything else here: press the matching vanilla
- *      hotbarKeys[] binding for one tick rather than mutating inventory
- *      state directly, so it goes through the same code path a real
- *      keypress would (respecting whatever vanilla/other mods do on that
- *      input, rather than us reimplementing slot-selection semantics).
+ *   1. A digit "1" through "9" -- selects that hotbar slot. Pressed through
+ *      the matching vanilla hotbarKeys[] binding rather than mutating
+ *      inventory state directly, so it takes the same code path a real
+ *      keypress would: MinecraftClient.handleInputEvents already handles
+ *      spectator mode, the creative save/load-toolbar modifiers, and
+ *      whatever server sync the selected slot needs. Reimplementing that
+ *      here would mean re-deriving all of it.
  *
  *   2. Anything else -- looked up in COMMANDS, a code -> KeyBinding map you
  *      define. The vanilla bindings below are just a starting set; add
  *      whatever your input grid actually needs, including other mods' own
  *      KeyBinding instances if you want to trigger those.
  *
- * Both cases press-then-schedule-release: tick() must run once per client
- * tick BEFORE dispatch() is called for that tick, so a press always lasts
- * exactly one tick regardless of which of the two paths triggered it.
+ * <h2>How a press is simulated</h2>
+ * A KeyBinding exposes its state two ways, and different actions read
+ * different ones:
  *
- * NOTE: hotbarKeys, isDamageable()-style method names, etc. are my best
- * recollection of Yarn 1.21.11 -- verify with Ctrl+Space before trusting
- * any of this compiles as-is, same caveat as everywhere else this session.
+ *   - {@code isPressed()} -- is the key held right now. Used by continuous
+ *     actions: attack, use, movement.
+ *   - {@code wasPressed()} -- consumes a count of discrete presses. Used by
+ *     nearly everything else, including hotbar selection, inventory, drop
+ *     and swap-hands.
+ *
+ * This used to only call {@code setPressed(true)}, which feeds isPressed()
+ * alone -- so every discrete action silently did nothing, hotbar taps
+ * included. Both are now driven: the press counter is bumped (via
+ * {@link KeyBindingAccessor}, since it's private) *and* the held flag is set
+ * for exactly one tick.
+ *
+ * Timing: Fabric's END_CLIENT_TICK fires at the end of MinecraftClient.tick(),
+ * after that tick's handleInputEvents() has already run. So a command
+ * dispatched now is picked up on the *next* tick -- one tick of latency,
+ * ~50ms, unnoticeable. {@link #tick()} must run once per client tick BEFORE
+ * dispatch() for that tick, which puts the release after the game has had
+ * its look at the held flag.
  */
 public class CommandDispatcher {
 
@@ -69,9 +86,22 @@ public class CommandDispatcher {
     public static void dispatch(String code) {
         init();
 
+        MinecraftClient client = MinecraftClient.getInstance();
+
+        // Vanilla only drains keybindings (handleInputEvents) while no screen
+        // or overlay is up. Queuing presses anyway would let them pile up
+        // unconsumed and then all fire at once the moment the player closes
+        // their inventory -- ten taps of the drop key throwing ten stacks.
+        // Dropping them is the honest behaviour: the game wouldn't have acted
+        // on a real keypress at that moment either.
+        if (client.currentScreen != null) {
+            System.out.println("[ThorHud] Ignoring command '" + code + "' -- a screen is open");
+            return;
+        }
+
         Integer slot = parseHotbarSlot(code);
         if (slot != null) {
-            pressForOneTick(MinecraftClient.getInstance().options.hotbarKeys[slot - 1]);
+            pressForOneTick(client.options.hotbarKeys[slot - 1]);
             return;
         }
 
@@ -91,6 +121,12 @@ public class CommandDispatcher {
     }
 
     private static void pressForOneTick(KeyBinding binding) {
+        // Discrete actions (hotbar, inventory, drop, swap) read wasPressed(),
+        // which drains this counter and ignores the held flag entirely.
+        KeyBindingAccessor accessor = (KeyBindingAccessor) binding;
+        accessor.thorhud$setTimesPressed(accessor.thorhud$getTimesPressed() + 1);
+
+        // Continuous actions (attack, use) read isPressed() instead.
         binding.setPressed(true);
         PENDING_RELEASE.add(binding);
     }
