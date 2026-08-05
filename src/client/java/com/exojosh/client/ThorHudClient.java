@@ -42,6 +42,15 @@ public class ThorHudClient implements ClientModInitializer {
      */
     private static final int MAX_ICON_RENDERS_PER_TICK = 2;
 
+    /**
+     * Ticks between map tile renders. 10 is ~2/sec, which reads as live while
+     * walking without re-scanning 16k columns every frame. The tile is only
+     * rendered when a client is actually connected.
+     */
+    private static final int MAP_UPDATE_INTERVAL_TICKS = 10;
+
+    private int ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
+
     // Loopback-only. Nothing here ever needs to leave the device.
     public static final HudStateServer HUD_SERVER = new HudStateServer(48291);
 
@@ -109,6 +118,28 @@ public class ThorHudClient implements ClientModInitializer {
 
         pushAssetsToNewClients();
         drainIconQueue(client);
+        maybeBroadcastMap(client);
+    }
+
+    /**
+     * Renders and ships a map tile every MAP_UPDATE_INTERVAL_TICKS.
+     *
+     * Skipped entirely when nothing is connected: this is the most expensive
+     * thing in the tick loop, and on a handheld there's no reason to pay for
+     * it when the second screen isn't watching.
+     */
+    private void maybeBroadcastMap(MinecraftClient client) {
+        if (!HUD_SERVER.hasClients()) {
+            // Reset so a freshly-connected app gets a tile on its first tick
+            // rather than waiting out the remainder of an interval.
+            ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
+            return;
+        }
+
+        if (++ticksSinceMapUpdate < MAP_UPDATE_INTERVAL_TICKS) return;
+        ticksSinceMapUpdate = 0;
+
+        MapRenderer.render(client).ifPresent(HUD_SERVER::broadcastMap);
     }
 
     /**

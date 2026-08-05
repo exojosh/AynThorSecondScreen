@@ -133,6 +133,30 @@ public class HudStateServer {
         writeLine(client, gson.toJson(new AssetResponse("asset", assetId, base64Png)));
     }
 
+    /** Broadcasts one rendered map tile. */
+    public void broadcastMap(MapRenderer.Tile tile) {
+        send(gson.toJson(new MapResponse(
+                "map",
+                tile.base64Png(),
+                tile.originX(),
+                tile.originZ(),
+                tile.playerX(),
+                tile.playerZ(),
+                tile.yaw(),
+                tile.size())));
+    }
+
+    /**
+     * Whether anyone is listening.
+     *
+     * Lets the tick loop skip work nobody will see -- rendering a map tile
+     * every few ticks into a socket with no client on it is pure battery
+     * drain on a handheld.
+     */
+    public boolean hasClients() {
+        return !clients.isEmpty();
+    }
+
     private void send(String json) {
         if (clients.isEmpty()) return;
         for (Socket client : clients) {
@@ -167,4 +191,23 @@ public class HudStateServer {
      *  doesn't provide that texture, so the app can fall back immediately
      *  rather than waiting for something that isn't coming. */
     public record AssetResponse(String type, String assetId, String data) {}
+
+    /**
+     * type is always "map". A top-down PNG tile plus where it sits in the world.
+     *
+     * originX/originZ are the block coordinates of the tile's top-left pixel,
+     * sent explicitly so the app can place the player marker without
+     * reimplementing MapRenderer's centring. yaw is degrees, vanilla's
+     * convention (0 = south, increasing clockwise).
+     */
+    public record MapResponse(
+            String type,
+            String data,
+            int originX,
+            int originZ,
+            double playerX,
+            double playerZ,
+            float yaw,
+            int size
+    ) {}
 }
