@@ -11,6 +11,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 
+import java.net.Socket;
 import java.util.ArrayDeque;
 import java.util.HashSet;
 import java.util.Optional;
@@ -29,6 +30,10 @@ import java.util.Set;
 public class ThorHudClient implements ClientModInitializer {
 
     private static final String ICON_REQUEST_PREFIX = "ICON:";
+
+    /** Asks for the HUD texture bundle to be re-sent (e.g. after a resource
+     *  pack change). New connections get it automatically without asking. */
+    private static final String ASSET_REQUEST = "ASSETS";
 
     /**
      * Cap how many icons we render per tick. Each one is an offscreen draw
@@ -91,12 +96,41 @@ public class ThorHudClient implements ClientModInitializer {
         while ((incoming = HUD_SERVER.pollCommand()) != null) {
             if (incoming.startsWith(ICON_REQUEST_PREFIX)) {
                 queueIconRequest(incoming.substring(ICON_REQUEST_PREFIX.length()));
+            } else if (incoming.equals(ASSET_REQUEST)) {
+                // Explicit re-request: the app asks for this after the player
+                // changes resource packs, since we have no reload hook.
+                broadcastHudAssets();
             } else {
                 CommandDispatcher.dispatch(incoming);
             }
         }
 
+        pushAssetsToNewClients();
         drainIconQueue(client);
+    }
+
+    /**
+     * Ships the whole HUD texture set to each newly-connected app.
+     *
+     * Done here rather than on the accept thread because resolving textures
+     * goes through the resource manager, which is client-thread state. Running
+     * once per new connection (not per tick) keeps this off the hot path --
+     * it's ~17 small PNGs, a few tens of KB in total.
+     */
+    private void pushAssetsToNewClients() {
+        Socket client;
+        while ((client = HUD_SERVER.pollNewClient()) != null) {
+            for (String key : HudAssetCatalog.keys()) {
+                HUD_SERVER.sendAssetTo(client, key, HudAssetCatalog.resolveBase64Png(key).orElse(null));
+            }
+            System.out.println("[ThorHud] Sent HUD asset bundle to " + client.getRemoteSocketAddress());
+        }
+    }
+
+    private void broadcastHudAssets() {
+        for (String key : HudAssetCatalog.keys()) {
+            HUD_SERVER.broadcastAsset(key, HudAssetCatalog.resolveBase64Png(key).orElse(null));
+        }
     }
 
     private void queueIconRequest(String itemId) {

@@ -32,6 +32,7 @@ public class HudStateServer {
     private final int port;
     private final List<Socket> clients = new CopyOnWriteArrayList<>();
     private final ConcurrentLinkedQueue<String> incomingCommands = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<Socket> newClients = new ConcurrentLinkedQueue<>();
     private ServerSocket serverSocket;
 
     public HudStateServer(int port) {
@@ -52,6 +53,11 @@ public class HudStateServer {
                 Socket client = serverSocket.accept();
                 System.out.println("[ThorHud] Client connected: " + client.getRemoteSocketAddress());
                 clients.add(client);
+                // Picked up on the next client tick, which is where the HUD
+                // asset bundle gets pushed -- resolving textures needs the
+                // resource manager, so it has to happen on the client thread,
+                // not here on the accept thread.
+                newClients.add(client);
 
                 Thread readerThread = new Thread(() -> readLoop(client), "thorhud-reader");
                 readerThread.setDaemon(true);
@@ -89,6 +95,15 @@ public class HudStateServer {
         return incomingCommands.poll();
     }
 
+    /**
+     * Returns a client that has connected since this was last called, or null.
+     * Lets the tick loop push the HUD asset bundle to just the newcomer
+     * instead of re-broadcasting it to everyone already connected.
+     */
+    public Socket pollNewClient() {
+        return newClients.poll();
+    }
+
     public void broadcast(HudState state) {
         send(gson.toJson(state));
     }
@@ -107,27 +122,49 @@ public class HudStateServer {
         send(gson.toJson(new IconResponse("icon", itemId, null)));
     }
 
+    /** Broadcasts one HUD texture, keyed by HudAssetCatalog's short name. */
+    public void broadcastAsset(String assetId, String base64Png) {
+        send(gson.toJson(new AssetResponse("asset", assetId, base64Png)));
+    }
+
+    /** Sends one HUD texture to a single client -- used for the bundle a
+     *  newly-connected app gets, which nobody else needs re-sent. */
+    public void sendAssetTo(Socket client, String assetId, String base64Png) {
+        writeLine(client, gson.toJson(new AssetResponse("asset", assetId, base64Png)));
+    }
+
     private void send(String json) {
         if (clients.isEmpty()) return;
-
-        String line = json + "\n";
-        byte[] payload = line.getBytes(StandardCharsets.UTF_8);
-
         for (Socket client : clients) {
-            try {
+            writeLine(client, json);
+        }
+    }
+
+    private void writeLine(Socket client, String json) {
+        byte[] payload = (json + "\n").getBytes(StandardCharsets.UTF_8);
+        try {
+            // Synchronized because the asset bundle is written to one client
+            // in a loop while broadcast() may be writing a state line to the
+            // same socket; interleaved writes would corrupt both.
+            synchronized (client) {
                 OutputStream out = client.getOutputStream();
                 out.write(payload);
                 out.flush();
-            } catch (IOException e) {
-                clients.remove(client);
-                try {
-                    client.close();
-                } catch (IOException ignored) {
-                }
+            }
+        } catch (IOException e) {
+            clients.remove(client);
+            try {
+                client.close();
+            } catch (IOException ignored) {
             }
         }
     }
 
     /** type is always "icon" -- lets the companion app tell this apart from a HudState line. */
     public record IconResponse(String type, String itemId, String data) {}
+
+    /** type is always "asset". data is null when the resource pack stack
+     *  doesn't provide that texture, so the app can fall back immediately
+     *  rather than waiting for something that isn't coming. */
+    public record AssetResponse(String type, String assetId, String data) {}
 }
