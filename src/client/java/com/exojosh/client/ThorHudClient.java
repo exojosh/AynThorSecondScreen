@@ -60,6 +60,7 @@ public class ThorHudClient implements ClientModInitializer {
         HudElementRegistry.removeElement(VanillaHudElements.HOTBAR);
         HudElementRegistry.removeElement(VanillaHudElements.HEALTH_BAR);
         HudElementRegistry.removeElement(VanillaHudElements.FOOD_BAR);
+        HudElementRegistry.removeElement(VanillaHudElements.AIR_BAR);
         HudElementRegistry.removeElement(VanillaHudElements.EXPERIENCE_LEVEL);
         HudElementRegistry.removeElement(VanillaHudElements.INFO_BAR);
         HudElementRegistry.removeElement(VanillaHudElements.ARMOR_BAR);
@@ -80,6 +81,7 @@ public class ThorHudClient implements ClientModInitializer {
         HudState state = new HudState(
                 player.getHealth(),
                 player.getMaxHealth(),
+                player.getAbsorptionAmount(),
                 player.getArmor(),
                 player.getHungerManager().getFoodLevel(),
                 player.experienceLevel,

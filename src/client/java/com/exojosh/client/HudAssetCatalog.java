@@ -44,6 +44,9 @@ public final class HudAssetCatalog {
         ASSETS.put("heart_full", "textures/gui/sprites/hud/heart/full.png");
         ASSETS.put("heart_half", "textures/gui/sprites/hud/heart/half.png");
         ASSETS.put("heart_container", "textures/gui/sprites/hud/heart/container.png");
+        // Absorption ("golden") hearts, drawn in slots past the normal ones.
+        ASSETS.put("heart_absorbing_full", "textures/gui/sprites/hud/heart/absorbing_full.png");
+        ASSETS.put("heart_absorbing_half", "textures/gui/sprites/hud/heart/absorbing_half.png");
         // ... but armor and food are flat with an underscore. Not a typo.
         ASSETS.put("armor_full", "textures/gui/sprites/hud/armor_full.png");
         ASSETS.put("armor_half", "textures/gui/sprites/hud/armor_half.png");

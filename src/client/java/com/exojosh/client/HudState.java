@@ -22,6 +22,9 @@ import java.util.List;
 public record HudState(
         float health,
         float maxHealth,
+        /** Extra "golden heart" health from absorption effects, on top of
+         *  health/maxHealth. Zero most of the time. */
+        float absorption,
         int armor,
         int food,
         int xpLevel,
