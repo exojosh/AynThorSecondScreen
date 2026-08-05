@@ -25,6 +25,14 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *      whatever your input grid actually needs, including other mods' own
  *      KeyBinding instances if you want to trigger those.
  *
+ * <h2>Codes name actions, not keys</h2>
+ * "SWAP", not "F". Naming codes after keyboard keys was a bug source and a
+ * dead end: the table drifted from reality (an "R" code bound to swap-hands),
+ * attack and use are mouse buttons with no letter to borrow, and a player
+ * rebinding a key in-game invalidates every letter at once. The action is what
+ * the two halves of this system actually agree on. Old letter codes are kept
+ * as aliases so an app built before the rename keeps working.
+ *
  * <h2>How a press is simulated</h2>
  * A KeyBinding exposes its state two ways, and different actions read
  * different ones:
@@ -58,19 +66,35 @@ public class CommandDispatcher {
         if (initialized) return;
         var options = MinecraftClient.getInstance().options;
 
-        // Example vanilla bindings -- swap/add whatever the grid buttons
-        // should actually send. Command codes are whatever short string the
-        // companion app sends over the socket (e.g. "E").
+        // Codes name the *action*, not a keyboard key.
+        //
+        // They used to name keys, and got it wrong: "R" was bound to swap-hands
+        // (vanilla's F) and "G" to drop (vanilla's Q), so the app's grid showed
+        // an R button that behaved like F. Naming keys can't work anyway --
+        // attack and use are mouse buttons with no letter to borrow, and any
+        // player who rebinds a key in-game desynchronises the whole table.
+        // The action is the thing both sides actually agree on.
+        //
+        // Codes are matched literally and are never a single digit, so they
+        // can't collide with the "1".."9" hotbar codes parsed ahead of them.
+        COMMANDS.put("INVENTORY", options.inventoryKey);
+        COMMANDS.put("DROP", options.dropKey);
+        COMMANDS.put("SWAP", options.swapHandsKey);
+        COMMANDS.put("USE", options.useKey);
+        COMMANDS.put("ATTACK", options.attackKey);
+        COMMANDS.put("JUMP", options.jumpKey);
+        COMMANDS.put("SNEAK", options.sneakKey);
+
+        // Superseded single-letter codes, kept so a companion app built before
+        // the rename still works against this mod. "R"/"G" are preserved with
+        // the behaviour they actually had, not the behaviour their names imply
+        // -- the point is not to break an installed app, not to bless the old
+        // naming. Safe to delete once both halves are known to be updated.
         COMMANDS.put("E", options.inventoryKey);
         COMMANDS.put("R", options.swapHandsKey);
         COMMANDS.put("G", options.dropKey);
         COMMANDS.put("H", options.useKey);
         COMMANDS.put("K", options.attackKey);
-
-        // Sent by the off-hand slot on the second screen. Named for the key
-        // vanilla actually binds swap-hands to, unlike the "R"/"G" pair above,
-        // which are mislabelled (see the input-codes bugfix in TODO.md) -- when
-        // that gets straightened out, this entry is the one to keep.
         COMMANDS.put("F", options.swapHandsKey);
 
         initialized = true;
