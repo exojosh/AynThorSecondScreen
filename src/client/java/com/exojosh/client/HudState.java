@@ -11,6 +11,13 @@ import java.util.List;
  * Plain data snapshot of the HUD elements we hid. Gson turns this straight
  * into JSON -- keep it a flat, boring record so the wire format stays simple
  * for whatever renders it on the second screen.
+ *
+ * air/maxAir drive the breathing bubbles. Both are sent raw (air is in
+ * ticks, maxAir is 300 for an unenchanted player but Respiration and status
+ * effects change it) rather than pre-reduced to a bubble count, so the
+ * companion app can apply vanilla's own rounding and we don't bake a HUD
+ * decision into the wire format. Vanilla hides the bubbles entirely unless
+ * air &lt; maxAir; the app makes that call.
  */
 public record HudState(
         float health,
@@ -20,6 +27,8 @@ public record HudState(
         int xpLevel,
         float xpProgress,
         int selectedSlot,
+        int air,
+        int maxAir,
         List<HotbarSlot> hotbar
 ) {
     /**

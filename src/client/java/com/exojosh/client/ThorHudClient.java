@@ -80,6 +80,8 @@ public class ThorHudClient implements ClientModInitializer {
                 player.experienceLevel,
                 player.experienceProgress,
                 player.getInventory().getSelectedSlot(),
+                player.getAir(),
+                player.getMaxAir(),
                 HudState.hotbarFromInventory(player)
         );
 

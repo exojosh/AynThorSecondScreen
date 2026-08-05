@@ -34,7 +34,7 @@ Full protocol spec (message shapes, field meanings, command codes) is in `thor-h
 ### Key classes (`src/client/java/com/exojosh/client/`)
 
 - `ThorHudClient` — `ClientModInitializer`; hides vanilla HUD elements via `HudElementRegistry`/`VanillaHudElements`, starts `HudStateServer`, and on each `ClientTickEvents.END_CLIENT_TICK` builds/broadcasts a `HudState` and drains inbound commands (routing `ICON:`-prefixed ones separately from action commands).
-- `HudState` — record of one tick's snapshot; static `hotbarFromInventory(player)` builder.
+- `HudState` — record of one tick's snapshot; static `hotbarFromInventory(player)` builder. Carries `air`/`maxAir` (raw ticks and the current maximum, which Respiration raises above 300) for the companion app's bubble row — sent raw rather than pre-reduced to a bubble count, so the app applies vanilla's own rounding and no HUD decision gets baked into the wire format. This postdates `thor-hud-handoff.md` §2's field list.
 - `HudStateServer` — owns the `ServerSocket`, one accept + one reader thread per client, `broadcast()`/`broadcastIcon()`/`pollCommand()`.
 - `CommandDispatcher` — maps letter codes to `KeyBinding`s and digit strings to hotbar slots; simulates one-tick presses, released at the start of the next tick (`tick()` runs before dispatch each tick).
 - `ItemIconRenderer` — **the primary icon path.** Renders an item/block offscreen through the real vanilla model pipeline and reads it back as PNG bytes, so icons are isometric (vanilla's GUI display transform), use correct per-face textures, and work for composited/tinted/3D-modelled items. See "Offscreen icon rendering" below for how and why.
