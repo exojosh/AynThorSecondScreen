@@ -15,28 +15,47 @@ import java.util.Optional;
  * back to vanilla" internally, so this gets that behavior for free and
  * always matches whatever pack the player currently has active.
  *
- * First-pass limitation: this reads the raw base item texture file, not a
- * fully-composited rendered icon. Items with tinted/layered rendering
- * (leather armor's dye color, potions, spawn eggs, etc.) won't reflect
- * those overlays -- getting the exact rendered pixels would mean rendering
- * through ItemRenderer into an offscreen framebuffer and reading it back,
- * meaningfully more code. Fine starting point for the common single-layer
- * case; revisit if the flat-texture look bothers you for tinted items.
+ * Tries textures/item/<path>.png first, then falls back to
+ * textures/block/<path>.png -- most simple blocks (dirt, stone, planks,
+ * etc.) don't have a separate item-folder texture at all; their item icon
+ * just points at the block texture directly. Without this fallback, every
+ * plain block in the hotbar comes back with no icon.
  *
- * NOTE: Identifier.of(), getResourceManager(), Resource.getInputStream() are
- * my best recollection of the Yarn 1.21.11 API shape -- verify with
- * Ctrl+Space, same caveat as everywhere else this session.
+ * First-pass limitation: this reads the raw base texture file, not a fully
+ * composited rendered icon. Items with tinted/layered rendering (dyed
+ * leather armor, potions, spawn eggs) or blocks whose item icon isn't a
+ * simple single texture (e.g. some 3D-modeled blocks) won't be fully
+ * accurate -- getting the exact rendered pixels would mean rendering
+ * through the real GUI render pipeline and reading back a framebuffer,
+ * meaningfully more code (and, per investigation, not straightforward in
+ * 1.21.11 -- GuiRenderer's draw flush is hardwired to the main window
+ * framebuffer, not parameterizable to an offscreen target). Fine starting
+ * point for the common cases; revisit if specific items still show blank
+ * or wrong.
+ *
+ * NOTE: Identifier lives at net.minecraft.util.Identifier for this Yarn
+ * version (confirmed against what already compiles elsewhere in this
+ * project) -- getResourceManager()/Resource.getInputStream() are still my
+ * best recollection, verify with Ctrl+Space if this doesn't compile clean.
  */
 public class ItemIconResolver {
 
     public static Optional<String> resolveBase64Png(String itemId) {
+        Identifier item = Identifier.of(itemId);
+
+        Optional<String> fromItemFolder = tryTexturePath(item, "item");
+        if (fromItemFolder.isPresent()) return fromItemFolder;
+
+        return tryTexturePath(item, "block");
+    }
+
+    private static Optional<String> tryTexturePath(Identifier item, String folder) {
         try {
-            Identifier item = Identifier.of(itemId);
-            Identifier texture = Identifier.of(item.getNamespace(), "textures/item/" + item.getPath() + ".png");
+            Identifier texture = Identifier.of(item.getNamespace(), "textures/" + folder + "/" + item.getPath() + ".png");
 
             var resourceOpt = MinecraftClient.getInstance().getResourceManager().getResource(texture);
             if (resourceOpt.isEmpty()) {
-                return Optional.empty(); // no item texture at this path -- e.g. some block-item edge cases
+                return Optional.empty();
             }
 
             try (InputStream in = resourceOpt.get().getInputStream()) {
@@ -44,7 +63,8 @@ public class ItemIconResolver {
                 return Optional.of(Base64.getEncoder().encodeToString(bytes));
             }
         } catch (IOException | RuntimeException e) {
-            System.out.println("[ThorHud] Failed to resolve icon for " + itemId + ": " + e.getMessage());
+            System.out.println("[ThorHud] Failed to resolve icon (" + folder + ") for "
+                    + item + ": " + e.getMessage());
             return Optional.empty();
         }
     }

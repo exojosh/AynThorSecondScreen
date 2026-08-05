@@ -97,6 +97,16 @@ public class HudStateServer {
         send(gson.toJson(new IconResponse("icon", itemId, base64Png)));
     }
 
+    /**
+     * Tells the app "we tried, there's no icon for this one" instead of just
+     * never replying. Without an explicit answer the app can't distinguish a
+     * slow render from a dropped request, so it either retries forever or
+     * (as it used to) gives up permanently on the first miss.
+     */
+    public void broadcastIconFailure(String itemId) {
+        send(gson.toJson(new IconResponse("icon", itemId, null)));
+    }
+
     private void send(String json) {
         if (clients.isEmpty()) return;
 

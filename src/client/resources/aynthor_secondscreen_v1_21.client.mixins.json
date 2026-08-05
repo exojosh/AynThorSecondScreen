@@ -3,7 +3,8 @@
 	"package": "com.exojosh.client.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
-		"ExampleClientMixin"
+		"ExampleClientMixin",
+		"NativeImageInvoker"
 	],
 	"injectors": {
 		"defaultRequire": 1
