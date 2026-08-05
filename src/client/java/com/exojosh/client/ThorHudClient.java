@@ -3,8 +3,6 @@ package com.exojosh.client;
 //import com.mojang.brigadier.CommandDispatcher;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
@@ -34,6 +32,15 @@ public class ThorHudClient implements ClientModInitializer {
     /** Asks for the HUD texture bundle to be re-sent (e.g. after a resource
      *  pack change). New connections get it automatically without asking. */
     private static final String ASSET_REQUEST = "ASSETS";
+
+    /**
+     * Which HUD elements the *game* should draw, as a comma-separated list of
+     * the app's element keys -- i.e. the ones the player switched off on the
+     * second screen, handed back to the main display. Full state every time,
+     * so the two screens can't drift into drawing an element twice or not at
+     * all. See {@link GameHudVisibility}.
+     */
+    private static final String HUD_VISIBILITY_PREFIX = "HUD:";
 
     /**
      * Cap how many icons we render per tick. Each one is an offscreen draw
@@ -66,13 +73,11 @@ public class ThorHudClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        HudElementRegistry.removeElement(VanillaHudElements.HOTBAR);
-        HudElementRegistry.removeElement(VanillaHudElements.HEALTH_BAR);
-        HudElementRegistry.removeElement(VanillaHudElements.FOOD_BAR);
-        HudElementRegistry.removeElement(VanillaHudElements.AIR_BAR);
-        HudElementRegistry.removeElement(VanillaHudElements.EXPERIENCE_LEVEL);
-        HudElementRegistry.removeElement(VanillaHudElements.INFO_BAR);
-        HudElementRegistry.removeElement(VanillaHudElements.ARMOR_BAR);
+        // Every element the second screen can draw is wrapped rather than
+        // removed outright, so the app can hand one back to the game later.
+        // Nothing is shown in game until it asks, which matches what the old
+        // unconditional removeElement() calls did.
+        GameHudVisibility.install();
 
         HUD_SERVER.start();
 
@@ -112,6 +117,9 @@ public class ThorHudClient implements ClientModInitializer {
                 // Explicit re-request: the app asks for this after the player
                 // changes resource packs, since we have no reload hook.
                 broadcastHudAssets();
+            } else if (incoming.startsWith(HUD_VISIBILITY_PREFIX)) {
+                GameHudVisibility.setShownInGame(
+                        incoming.substring(HUD_VISIBILITY_PREFIX.length()));
             } else {
                 CommandDispatcher.dispatch(incoming);
             }
