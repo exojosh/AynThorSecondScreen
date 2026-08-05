@@ -67,6 +67,12 @@ public class CommandDispatcher {
         COMMANDS.put("H", options.useKey);
         COMMANDS.put("K", options.attackKey);
 
+        // Sent by the off-hand slot on the second screen. Named for the key
+        // vanilla actually binds swap-hands to, unlike the "R"/"G" pair above,
+        // which are mislabelled (see the input-codes bugfix in TODO.md) -- when
+        // that gets straightened out, this entry is the one to keep.
+        COMMANDS.put("F", options.swapHandsKey);
+
         initialized = true;
     }
 

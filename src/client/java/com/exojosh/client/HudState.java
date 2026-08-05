@@ -32,7 +32,13 @@ public record HudState(
         int selectedSlot,
         int air,
         int maxAir,
-        List<HotbarSlot> hotbar
+        List<HotbarSlot> hotbar,
+        /** The off-hand stack, in the same shape as a hotbar slot. Always
+         *  present -- an empty off-hand is sent as a minecraft:air slot rather
+         *  than omitted, because the app draws the box either way (vanilla
+         *  hides it when empty; the second screen keeps it as a tap target for
+         *  swapping into). */
+        HotbarSlot offhand
 ) {
     /**
      * damage/maxDamage are both 0 for non-damageable items (blocks, most
@@ -57,18 +63,28 @@ public record HudState(
     public static List<HotbarSlot> hotbarFromInventory(PlayerEntity player) {
         List<HotbarSlot> slots = new ArrayList<>(9);
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = player.getInventory().getStack(i);
-            if (stack.isEmpty()) {
-                slots.add(new HotbarSlot("minecraft:air", 0, 0, 0, false));
-            } else {
-                String id = Registries.ITEM.getId(stack.getItem()).toString();
-                boolean damageable = stack.isDamageable();
-                int damage = damageable ? stack.getDamage() : 0;
-                int maxDamage = damageable ? stack.getMaxDamage() : 0;
-                boolean hasGlint = stack.hasGlint();
-                slots.add(new HotbarSlot(id, stack.getCount(), damage, maxDamage, hasGlint));
-            }
+            slots.add(slotFrom(player.getInventory().getStack(i)));
         }
         return slots;
+    }
+
+    /**
+     * The off-hand stack, described exactly like a hotbar slot so the app can
+     * render it with the same code path -- it's the same 16x16 icon with the
+     * same count/durability/glint decorations, just in a box of its own.
+     */
+    public static HotbarSlot offhandFrom(PlayerEntity player) {
+        return slotFrom(player.getOffHandStack());
+    }
+
+    private static HotbarSlot slotFrom(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return new HotbarSlot("minecraft:air", 0, 0, 0, false);
+        }
+        String id = Registries.ITEM.getId(stack.getItem()).toString();
+        boolean damageable = stack.isDamageable();
+        int damage = damageable ? stack.getDamage() : 0;
+        int maxDamage = damageable ? stack.getMaxDamage() : 0;
+        return new HotbarSlot(id, stack.getCount(), damage, maxDamage, stack.hasGlint());
     }
 }

@@ -60,10 +60,18 @@ public final class HudAssetCatalog {
         ASSETS.put("xp_bar_progress", "textures/gui/sprites/hud/experience_bar_progress.png");
         ASSETS.put("hotbar", "textures/gui/sprites/hud/hotbar.png");
         ASSETS.put("hotbar_selection", "textures/gui/sprites/hud/hotbar_selection.png");
+        // The off-hand box. Vanilla ships a left and a right variant and picks
+        // by the player's main arm; only the right one is served, because the
+        // app puts the off-hand slot under the player's thumb at the right edge
+        // of the screen rather than beside the hotbar (see HotbarRow).
+        ASSETS.put("hotbar_offhand_right", "textures/gui/sprites/hud/hotbar_offhand_right.png");
         // Not a HUD sprite: the bitmap font sheet the app draws text from,
-        // and the block texture it tiles as a background.
+        // the block texture it tiles as a background, and the paper sheet the
+        // live map is drawn on -- the last two live outside textures/gui/ but
+        // resolve through the same resource manager, resource packs included.
         ASSETS.put("font_ascii", "textures/font/ascii.png");
         ASSETS.put("background", "textures/block/dirt.png");
+        ASSETS.put("map_background", "textures/map/map_background.png");
     }
 
     private HudAssetCatalog() {
