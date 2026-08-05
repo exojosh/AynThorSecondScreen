@@ -23,6 +23,27 @@ loom {
 			sourceSet sourceSets.client
 		}
 	}
+
+	runs {
+		client {
+			// Opt-in auto-join, so a dev client can be driven end to end
+			// without anyone clicking through the main menu:
+			//
+			//   ./gradlew runClient -PquickPlay="New World"
+			//
+			// This is the only practical way to exercise the socket protocol
+			// against a real world from a script -- the launcher on the target
+			// device renders Minecraft through a virtual-cursor overlay that
+			// synthesized touch events move but never click, so menu
+			// automation there is a dead end.
+			//
+			// Property-gated rather than always-on: a bare `runClient` should
+			// still drop you at the menu like every other Fabric project.
+			if (project.hasProperty("quickPlay")) {
+				programArgs "--quickPlaySingleplayer", project.property("quickPlay").toString()
+			}
+		}
+	}
 }
 
 dependencies {
