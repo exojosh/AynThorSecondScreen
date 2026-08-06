@@ -28,8 +28,21 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public class HudStateServer {
 
+    /** How long to wait before trying the bind again. Long enough not to spam
+     *  the log, short enough that clearing a conflict feels immediate. */
+    private static final long BIND_RETRY_MS = 5000;
+
+    /** Identifies what answered on this port, so the app can tell the mod apart
+     *  from anything else that happens to accept a connection there. */
+    private static final String MOD_ID = "aynthor_secondscreen";
+
+    /** Bumped only when a change would break an older app build. The app uses
+     *  it to say "update the other half" rather than misbehaving. */
+    private static final int PROTOCOL_VERSION = 1;
+
     private final Gson gson = new Gson();
     private final int port;
+    private volatile String bindFailure;
     private final List<Socket> clients = new CopyOnWriteArrayList<>();
     private final ConcurrentLinkedQueue<String> incomingCommands = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Socket> newClients = new ConcurrentLinkedQueue<>();
@@ -45,28 +58,76 @@ public class HudStateServer {
         acceptThread.start();
     }
 
+    /**
+     * Keeps trying to own the port, rather than giving up for the session.
+     *
+     * This used to catch the {@link java.net.BindException} and <em>return</em>,
+     * which killed the accept thread for good: the second screen was dead until
+     * the game was restarted, with nothing said anywhere the player looks. It
+     * happened for real — a leftover {@code adb reverse tcp:48291 tcp:48291}
+     * from a capture run left adbd owning the port, so the mod never bound it
+     * and the app connected to <em>adbd</em>, which accepted and immediately
+     * dropped every connection. On the second screen that reads as "Not
+     * connected" alternating with "Waiting for map data…", which looks exactly
+     * like a broken app update and says nothing about a port conflict.
+     *
+     * Retrying means clearing the conflict is enough on its own — no restart.
+     */
     private void acceptLoop() {
-        try {
-            serverSocket = new ServerSocket(port, 4, InetAddress.getLoopbackAddress());
-            System.out.println("[ThorHud] Listening on 127.0.0.1:" + port);
-            while (!serverSocket.isClosed()) {
-                Socket client = serverSocket.accept();
-                System.out.println("[ThorHud] Client connected: " + client.getRemoteSocketAddress());
-                clients.add(client);
-                // Picked up on the next client tick, which is where the HUD
-                // asset bundle gets pushed -- resolving textures needs the
-                // resource manager, so it has to happen on the client thread,
-                // not here on the accept thread.
-                newClients.add(client);
+        while (true) {
+            try (ServerSocket socket = new ServerSocket(port, 4, InetAddress.getLoopbackAddress())) {
+                serverSocket = socket;
+                bindFailure = null;
+                System.out.println("[ThorHud] Listening on 127.0.0.1:" + port);
 
-                Thread readerThread = new Thread(() -> readLoop(client), "thorhud-reader");
-                readerThread.setDaemon(true);
-                readerThread.start();
+                while (!socket.isClosed()) {
+                    Socket client = socket.accept();
+                    System.out.println("[ThorHud] Client connected: " + client.getRemoteSocketAddress());
+
+                    // Sent from this thread, before anything else, so it lands
+                    // even if the client thread is mid-frame. It's the one
+                    // message that says *what* answered on this port.
+                    writeLine(client, gson.toJson(new HelloResponse("hello", MOD_ID, PROTOCOL_VERSION)));
+
+                    clients.add(client);
+                    // Picked up on the next client tick, which is where the HUD
+                    // asset bundle gets pushed -- resolving textures needs the
+                    // resource manager, so it has to happen on the client
+                    // thread, not here on the accept thread.
+                    newClients.add(client);
+
+                    Thread readerThread = new Thread(() -> readLoop(client), "thorhud-reader");
+                    readerThread.setDaemon(true);
+                    readerThread.start();
+                }
+            } catch (IOException e) {
+                bindFailure = e.getMessage() == null ? e.toString() : e.getMessage();
+                // System.err, not System.out: this is the one failure whose
+                // audience is on the device that cannot be told. The tick loop
+                // also surfaces it in the player's own chat, which is the only
+                // screen guaranteed to be working when this happens.
+                System.err.println("[ThorHud] Could not listen on 127.0.0.1:" + port
+                        + " (" + bindFailure + "); retrying in " + (BIND_RETRY_MS / 1000) + "s. "
+                        + "A leftover 'adb reverse tcp:" + port + "' is the usual cause.");
             }
-        } catch (IOException e) {
-            System.out.println("[ThorHud] Failed to bind/accept on port " + port + ":");
-            e.printStackTrace();
+
+            try {
+                Thread.sleep(BIND_RETRY_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
+    }
+
+    /**
+     * The current bind failure, or null if the port is ours.
+     *
+     * Polled by the tick loop so it can say so in the player's own chat — see
+     * the note in {@link #acceptLoop}.
+     */
+    public String bindFailure() {
+        return bindFailure;
     }
 
     private void readLoop(Socket client) {
@@ -264,6 +325,16 @@ public class HudStateServer {
     /** type is always "noplayer". Carries nothing -- it's a latch, and the app
      *  holds that state until a real snapshot arrives. */
     public record NoPlayerResponse(String type) {}
+
+    /**
+     * type is always "hello". The first line on every connection.
+     *
+     * Exists so the app can tell "connected to the mod" from "connected to
+     * *something* on 48291" -- a leftover `adb reverse` puts adbd on this port,
+     * and adbd accepts and instantly drops every connection, which the app
+     * previously reported as an ordinary flapping connection.
+     */
+    public record HelloResponse(String type, String mod, int protocol) {}
 
     /** type is always "asset". data is null when the resource pack stack
      *  doesn't provide that texture, so the app can fall back immediately
