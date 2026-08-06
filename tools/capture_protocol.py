@@ -44,6 +44,12 @@ def main():
                          "request, so without this nothing exercises the item "
                          "render path. Pair it with --say '/give ...' to check "
                          "an item you aren't carrying.")
+    ap.add_argument("--move", default=None, metavar="FROM,TO",
+                    help="move a stack between two slots of the open handler, "
+                         "as two PICKUP clicks -- the same pair a drag sends. "
+                         "The container state before and after are both printed, "
+                         "so this is the end-to-end check that a click actually "
+                         "moves an item.")
     ap.add_argument("--say", default=None,
                     help="send this as a CHAT: command once connected. The "
                          "server echoes chat back, so seeing it in the captured "
@@ -73,8 +79,26 @@ def main():
     bindings = 0
     chats = []
     icons = {}
+    containers = []
+    move_sent = False
     first_state = None
     last_map_meta = None
+
+    def describe_container(msg):
+        filled = [(i, s["stack"]["itemId"], s["stack"]["count"])
+                  for i, s in enumerate(msg.get("slots") or [])
+                  if s["stack"]["itemId"] != "minecraft:air"]
+        return {
+            "syncId": msg.get("syncId"),
+            "handlerType": msg.get("handlerType"),
+            "cursor": msg.get("cursor", {}).get("itemId"),
+            "slotCount": len(msg.get("slots") or []),
+            "playerStart": msg.get("playerStart"),
+            "hotbarStart": msg.get("hotbarStart"),
+            "armorStart": msg.get("armorStart"),
+            "offhandIndex": msg.get("offhandIndex"),
+            "filled": filled,
+        }
 
     if args.say:
         sock.sendall(("CHAT:" + args.say + "\n").encode("utf-8"))
@@ -140,6 +164,20 @@ def main():
                     # request -- worth distinguishing, since the two used to
                     # look identical from out here.
                     icons[item_id] = None
+            elif kind == "container":
+                containers.append(describe_container(msg))
+
+                # Fire the move once, off the first container state we see --
+                # we need its syncId, and it's only sent on change so there's
+                # no polling it.
+                if args.move and not move_sent:
+                    src, dst = (int(p) for p in args.move.split(","))
+                    sync = msg.get("syncId")
+                    for slot in (src, dst):
+                        sock.sendall(
+                            f"SLOT:{sync},{slot},0,PICKUP\n".encode("utf-8"))
+                    print(f"sent SLOT {src} -> {dst} on handler {sync}")
+                    move_sent = True
             elif kind == "chat":
                 chats.append(msg.get("segments") or [])
             elif kind == "bindings":
@@ -158,7 +196,10 @@ def main():
         # longer than the first three map tiles.
         if (maps >= 3 and assets and states
                 and (not args.say or chats)
-                and len(icons) >= len(args.icon)):
+                and len(icons) >= len(args.icon)
+                # A move is only proved by the state that comes back *after*
+                # it, so wait for a second container line.
+                and (not args.move or len(containers) >= 3)):
             break
 
     print()
@@ -173,6 +214,21 @@ def main():
     missing = sorted(k for k, v in assets.items() if not v)
     if missing:
         print(f"assets MISSING  : {missing}")
+
+    if containers:
+        print()
+        print(f"container states ({len(containers)}):")
+        for i, c in enumerate(containers):
+            label = "before" if i == 0 else ("after" if i == len(containers) - 1 else f"#{i}")
+            print(f"  [{label}] syncId={c['syncId']} type={c['handlerType']} "
+                  f"slots={c['slotCount']} player={c['playerStart']} "
+                  f"hotbar={c['hotbarStart']} armor={c['armorStart']} "
+                  f"offhand={c['offhandIndex']} cursor={c['cursor']}")
+            for index, item, count in c["filled"]:
+                print(f"        slot {index:>2} = {count}x {item}")
+        if args.move and len(containers) >= 2:
+            same = containers[0]["filled"] == containers[-1]["filled"]
+            print(f"  -> contents {'UNCHANGED (move did nothing)' if same else 'CHANGED'}")
 
     if args.icon or icons:
         print()

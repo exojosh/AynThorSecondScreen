@@ -167,6 +167,22 @@ public class HudStateServer {
         writeLine(client, gson.toJson(new ChatResponse("chat", segments)));
     }
 
+    /**
+     * Broadcasts the open screen handler's contents.
+     *
+     * The record already carries its own {@code type} field, so unlike every
+     * other message here it needs no wrapper — see {@link ContainerRelay}.
+     */
+    public void broadcastContainer(ContainerRelay.ScreenHandlerState state) {
+        send(gson.toJson(state));
+    }
+
+    /** The same, to a single client -- what a newly-connected app gets, so it
+     *  doesn't sit empty until the player next moves an item. */
+    public void sendContainerTo(Socket client, ContainerRelay.ScreenHandlerState state) {
+        writeLine(client, gson.toJson(state));
+    }
+
     /** Broadcasts one rendered map tile. */
     public void broadcastMap(MapRenderer.Tile tile) {
         send(gson.toJson(new MapResponse(
