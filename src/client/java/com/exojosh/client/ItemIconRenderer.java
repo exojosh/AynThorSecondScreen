@@ -217,6 +217,29 @@ public final class ItemIconRenderer {
      * ItemRenderState.render() only queues commands; this turns them into
      * actual geometry. Equivalent to vanilla's ItemCommandRenderer minus the
      * entity-outline pass, which GUI items never use.
+     *
+     * <h2>The glint is deliberately dropped here</h2>
+     * {@code command.glintType()} is replaced with {@link ItemRenderState.Glint#NONE},
+     * so an enchanted item renders as the plain item and the companion app draws
+     * the glint over it.
+     *
+     * Passing the real glint type through was an actual bug, not a missing
+     * nicety: an enchanted golden apple came back as a flat square of the glint
+     * texture with no apple in it. {@code ItemRenderer.renderItem} answers a
+     * glint by unioning the item's own layer with {@code RenderLayers.glint()},
+     * so the same quads are drawn twice -- and that second layer is an *additive*
+     * pipeline whose UVs come from a texture matrix vanilla rebuilds per frame
+     * from the wall clock ({@code TextureTransform.GLINT_TEXTURING}). Offscreen,
+     * outside vanilla's frame setup, that pass covers the item instead of
+     * shimmering across it.
+     *
+     * Even if it composited correctly it would be the wrong answer here: the
+     * result is a still PNG, so vanilla's scrolling shimmer would be frozen.
+     * Drawing it app-side gets the animation back and masks it to the item's own
+     * alpha, which is what makes a sword glint along the blade rather than
+     * lighting up the whole square. The app needs only the {@code hasGlint} flag
+     * the snapshot already carries, plus the glint texture, which
+     * {@link HudAssetCatalog} now serves.
      */
     private static void flushItemCommands(OrderedRenderCommandQueueImpl queue) {
         MatrixStack matrices = new MatrixStack();
@@ -234,7 +257,7 @@ public final class ItemIconRenderer {
                         command.tintLayers(),
                         command.quads(),
                         command.renderLayer(),
-                        command.glintType()
+                        ItemRenderState.Glint.NONE
                 );
                 matrices.pop();
             }
