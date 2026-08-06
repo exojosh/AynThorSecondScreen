@@ -168,6 +168,17 @@ public class HudStateServer {
     }
 
     /**
+     * Tells the app there is no player — main menu, world unloading, kicked.
+     *
+     * A message rather than simply going quiet, because silence is
+     * indistinguishable from a stalled game: the app would keep displaying the
+     * last snapshot indefinitely with no way to know it was stale.
+     */
+    public void broadcastNoPlayer() {
+        send(gson.toJson(new NoPlayerResponse("noplayer")));
+    }
+
+    /**
      * Broadcasts the open screen handler's contents.
      *
      * The record already carries its own {@code type} field, so unlike every
@@ -249,6 +260,10 @@ public class HudStateServer {
      * {@link ChatRelay} for why the styling is reduced to colour alone.
      */
     public record ChatResponse(String type, List<ChatRelay.Segment> segments) {}
+
+    /** type is always "noplayer". Carries nothing -- it's a latch, and the app
+     *  holds that state until a real snapshot arrives. */
+    public record NoPlayerResponse(String type) {}
 
     /** type is always "asset". data is null when the resource pack stack
      *  doesn't provide that texture, so the app can fall back immediately

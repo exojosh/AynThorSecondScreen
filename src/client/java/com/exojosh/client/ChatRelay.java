@@ -107,6 +107,17 @@ public final class ChatRelay {
     }
 
     /**
+     * Drops the backlog. Called when the player leaves a world, matching
+     * vanilla — {@code ChatHud} is cleared on disconnect, so holding it here
+     * would show one world's conversation over the top of the next one's.
+     */
+    public static void clearHistory() {
+        synchronized (HISTORY) {
+            HISTORY.clear();
+        }
+    }
+
+    /**
      * Sends a line of chat as the player.
      *
      * Mirrors {@code ChatScreen}: the text is normalised the way the game's own

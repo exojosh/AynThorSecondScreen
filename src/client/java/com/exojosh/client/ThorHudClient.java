@@ -80,6 +80,18 @@ public class ThorHudClient implements ClientModInitializer {
 
     private int ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
 
+    /**
+     * Whether a player existed on the previous tick, so leaving a world can be
+     * detected as a *transition* rather than as a state.
+     *
+     * Without this the tick loop simply returned early with no player, which
+     * left the second screen showing the last snapshot forever — full health,
+     * a hotbar, a map of wherever you last stood — while the game sat at the
+     * main menu. Nothing about that reads as "not in a world"; it reads as a
+     * frozen app.
+     */
+    private boolean hadPlayer = false;
+
     // Loopback-only. Nothing here ever needs to leave the device.
     public static final HudStateServer HUD_SERVER = new HudStateServer(48291);
 
@@ -117,7 +129,11 @@ public class ThorHudClient implements ClientModInitializer {
         CommandDispatcher.tick();
 
         PlayerEntity player = client.player;
-        if (player == null) return;
+        if (player == null) {
+            onLeftWorld();
+            return;
+        }
+        hadPlayer = true;
 
         HudState state = new HudState(
                 player.getHealth(),
@@ -171,6 +187,32 @@ public class ThorHudClient implements ClientModInitializer {
         if (HUD_SERVER.hasClients()) {
             ContainerRelay.broadcastIfChanged(client, HUD_SERVER);
         }
+    }
+
+    /**
+     * Tells the app the player is gone — main menu, world unloaded, kicked.
+     *
+     * Sent once on the transition rather than every tick: it's a latch, and the
+     * app holds "no player" until a real snapshot arrives. Repeating it 20
+     * times a second at the main menu would be the same unthrottled broadcast
+     * this replaces.
+     *
+     * The chat backlog goes with it, matching vanilla — {@code ChatHud} is
+     * cleared on disconnect, so keeping it here would show the previous
+     * world's conversation over the next one's.
+     */
+    private void onLeftWorld() {
+        if (!hadPlayer) return;
+        hadPlayer = false;
+
+        ChatRelay.clearHistory();
+        // So re-entering a world re-sends the inventory rather than waiting for
+        // the first thing the player moves.
+        ContainerRelay.invalidate();
+        ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
+
+        HUD_SERVER.broadcastNoPlayer();
+        System.out.println("[ThorHud] No player -- told the second screen to wait");
     }
 
     /**
