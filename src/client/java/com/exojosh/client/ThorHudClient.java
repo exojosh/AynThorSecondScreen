@@ -98,6 +98,10 @@ public class ThorHudClient implements ClientModInitializer {
      *  tick -- the accept thread retries every few seconds. */
     private boolean warnedAboutBindFailure = false;
 
+    /** The last snapshot actually sent, so identical ones can be skipped and a
+     *  new client can be handed the current state at once. */
+    private HudState lastHudState = null;
+
     // Loopback-only. Nothing here ever needs to leave the device.
     public static final HudStateServer HUD_SERVER = new HudStateServer(48291);
 
@@ -157,7 +161,7 @@ public class ThorHudClient implements ClientModInitializer {
                 HudState.offhandFrom(player)
         );
 
-        HUD_SERVER.broadcast(state);
+        broadcastHudStateIfChanged(state);
 
         String incoming;
         while ((incoming = HUD_SERVER.pollCommand()) != null) {
@@ -194,6 +198,30 @@ public class ThorHudClient implements ClientModInitializer {
         if (HUD_SERVER.hasClients()) {
             ContainerRelay.broadcastIfChanged(client, HUD_SERVER);
         }
+    }
+
+    /**
+     * Ships a HUD snapshot only when it differs from the last one sent.
+     *
+     * The old code broadcast every tick, twenty times a second, forever. Almost
+     * all of those were byte-identical: nothing in this snapshot changes while
+     * a player walks around — position isn't in it — so an idle player was
+     * paying for 1200 JSON serialisations and socket writes a minute to say
+     * nothing. On a handheld running the game *and* the companion app that is
+     * pure battery.
+     *
+     * Structural equality on the record does the work, which also means a
+     * change the wire format can't express doesn't re-send. That's the same
+     * trade {@link ContainerRelay} makes, and it's right for the same reason:
+     * the app couldn't draw the difference either.
+     *
+     * The last one is kept so a newly connected client gets the current state
+     * immediately instead of waiting for the player to do something.
+     */
+    private void broadcastHudStateIfChanged(HudState state) {
+        if (state.equals(lastHudState)) return;
+        lastHudState = state;
+        HUD_SERVER.broadcast(state);
     }
 
     /**
@@ -244,6 +272,9 @@ public class ThorHudClient implements ClientModInitializer {
         hadPlayer = false;
 
         ChatRelay.clearHistory();
+        // So re-entering a world re-sends a full snapshot rather than
+        // comparing against one from the world just left.
+        lastHudState = null;
         // So re-entering a world re-sends the inventory rather than waiting for
         // the first thing the player moves.
         ContainerRelay.invalidate();
@@ -306,6 +337,13 @@ public class ThorHudClient implements ClientModInitializer {
             ContainerRelay.ScreenHandlerState container = ContainerRelay.current();
             if (container != null) {
                 HUD_SERVER.sendContainerTo(client, container);
+            }
+
+            // Likewise the HUD snapshot: now that it's only sent on change, a
+            // client connecting to a stationary player would otherwise see
+            // nothing until they moved.
+            if (lastHudState != null) {
+                HUD_SERVER.sendStateTo(client, lastHudState);
             }
 
             System.out.println("[ThorHud] Sent HUD asset bundle, key bindings and "

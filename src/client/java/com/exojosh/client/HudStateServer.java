@@ -169,6 +169,13 @@ public class HudStateServer {
         send(gson.toJson(state));
     }
 
+    /** The current snapshot to a single client. Needed because the snapshot is
+     *  only broadcast on change, so a client connecting to a stationary player
+     *  would otherwise see nothing until they moved. */
+    public void sendStateTo(Socket client, HudState state) {
+        writeLine(client, gson.toJson(state));
+    }
+
     public void broadcastIcon(String itemId, String base64Png) {
         send(gson.toJson(new IconResponse("icon", itemId, base64Png)));
     }
