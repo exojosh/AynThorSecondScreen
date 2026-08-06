@@ -34,6 +34,14 @@ public class ThorHudClient implements ClientModInitializer {
     private static final String ASSET_REQUEST = "ASSETS";
 
     /**
+     * Asks for the key-binding list to be re-sent. New connections get it
+     * unprompted; the app re-asks when it opens its input picker, because a
+     * player who rebinds a key mid-session leaves the printed key names stale
+     * and there's no rebind hook to push from.
+     */
+    private static final String BINDING_REQUEST = "BINDINGS";
+
+    /**
      * Which HUD elements the *game* should draw, as a comma-separated list of
      * the app's element keys -- i.e. the ones the player switched off on the
      * second screen, handed back to the main display. Full state every time,
@@ -117,6 +125,8 @@ public class ThorHudClient implements ClientModInitializer {
                 // Explicit re-request: the app asks for this after the player
                 // changes resource packs, since we have no reload hook.
                 broadcastHudAssets();
+            } else if (incoming.equals(BINDING_REQUEST)) {
+                HUD_SERVER.broadcastBindings(KeyBindingCatalog.snapshot());
             } else if (incoming.startsWith(HUD_VISIBILITY_PREFIX)) {
                 GameHudVisibility.setShownInGame(
                         incoming.substring(HUD_VISIBILITY_PREFIX.length()));
@@ -125,7 +135,7 @@ public class ThorHudClient implements ClientModInitializer {
             }
         }
 
-        pushAssetsToNewClients();
+        pushBundleToNewClients();
         drainIconQueue(client);
         maybeBroadcastMap(client);
     }
@@ -152,20 +162,24 @@ public class ThorHudClient implements ClientModInitializer {
     }
 
     /**
-     * Ships the whole HUD texture set to each newly-connected app.
+     * Ships everything a newly-connected app needs up front: the whole HUD
+     * texture set, then the key-binding list.
      *
-     * Done here rather than on the accept thread because resolving textures
-     * goes through the resource manager, which is client-thread state. Running
-     * once per new connection (not per tick) keeps this off the hot path --
-     * it's ~17 small PNGs, a few tens of KB in total.
+     * Done here rather than on the accept thread because both go through
+     * client-thread state -- textures through the resource manager, bindings
+     * through GameOptions and the language files. Running once per new
+     * connection (not per tick) keeps it off the hot path: ~17 small PNGs and
+     * a hundred-odd short strings, a few tens of KB in total.
      */
-    private void pushAssetsToNewClients() {
+    private void pushBundleToNewClients() {
         Socket client;
         while ((client = HUD_SERVER.pollNewClient()) != null) {
             for (String key : HudAssetCatalog.keys()) {
                 HUD_SERVER.sendAssetTo(client, key, HudAssetCatalog.resolveBase64Png(key).orElse(null));
             }
-            System.out.println("[ThorHud] Sent HUD asset bundle to " + client.getRemoteSocketAddress());
+            HUD_SERVER.sendBindingsTo(client, KeyBindingCatalog.snapshot());
+            System.out.println("[ThorHud] Sent HUD asset bundle and key bindings to "
+                    + client.getRemoteSocketAddress());
         }
     }
 

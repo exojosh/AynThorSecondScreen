@@ -133,6 +133,24 @@ public class HudStateServer {
         writeLine(client, gson.toJson(new AssetResponse("asset", assetId, base64Png)));
     }
 
+    /**
+     * Ships the full key-binding list.
+     *
+     * Sent whole, never as a delta, for the same reason the HUD-visibility set
+     * is: the app builds its picker straight from this, and a partial list
+     * silently becomes "that action doesn't exist" rather than an error anyone
+     * would notice.
+     */
+    public void broadcastBindings(List<KeyBindingCatalog.Entry> bindings) {
+        send(gson.toJson(new BindingsResponse("bindings", bindings)));
+    }
+
+    /** The same list to a single client -- what a newly-connected app gets,
+     *  alongside the texture bundle, without anyone else being re-sent it. */
+    public void sendBindingsTo(Socket client, List<KeyBindingCatalog.Entry> bindings) {
+        writeLine(client, gson.toJson(new BindingsResponse("bindings", bindings)));
+    }
+
     /** Broadcasts one rendered map tile. */
     public void broadcastMap(MapRenderer.Tile tile) {
         send(gson.toJson(new MapResponse(
@@ -186,6 +204,13 @@ public class HudStateServer {
 
     /** type is always "icon" -- lets the companion app tell this apart from a HudState line. */
     public record IconResponse(String type, String itemId, String data) {}
+
+    /**
+     * type is always "bindings". Every key binding the game has, display text
+     * already translated -- see {@link KeyBindingCatalog} for why that
+     * resolution happens here and not in the app.
+     */
+    public record BindingsResponse(String type, List<KeyBindingCatalog.Entry> bindings) {}
 
     /** type is always "asset". data is null when the resource pack stack
      *  doesn't provide that texture, so the app can fall back immediately
