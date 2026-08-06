@@ -44,6 +44,10 @@ def main():
                          "request, so without this nothing exercises the item "
                          "render path. Pair it with --say '/give ...' to check "
                          "an item you aren't carrying.")
+    ap.add_argument("--wait-noplayer", action="store_true",
+                    help="stay connected until the mod reports the player is "
+                         "gone. Leaving a world is a transition, so it can only "
+                         "be observed by still being here when it happens.")
     ap.add_argument("--move", default=None, metavar="FROM,TO",
                     help="move a stack between two slots of the open handler, "
                          "as two PICKUP clicks -- the same pair a drag sends. "
@@ -80,6 +84,7 @@ def main():
     chats = []
     icons = {}
     containers = []
+    no_player = 0
     move_sent = False
     first_state = None
     last_map_meta = None
@@ -164,6 +169,12 @@ def main():
                     # request -- worth distinguishing, since the two used to
                     # look identical from out here.
                     icons[item_id] = None
+            elif kind == "noplayer":
+                # The transition out of a world. Printed as it happens rather
+                # than tallied, because *when* it arrives relative to the last
+                # HUD state is the whole point.
+                no_player += 1
+                print(f"<- noplayer (after {states} HUD states)")
             elif kind == "container":
                 containers.append(describe_container(msg))
 
@@ -199,7 +210,8 @@ def main():
                 and len(icons) >= len(args.icon)
                 # A move is only proved by the state that comes back *after*
                 # it, so wait for a second container line.
-                and (not args.move or len(containers) >= 3)):
+                and (not args.move or len(containers) >= 3)
+                and (not args.wait_noplayer or no_player > 0)):
             break
 
     print()
@@ -207,6 +219,7 @@ def main():
     print(f"HUD state lines : {states}")
     print(f"map tiles       : {maps}")
     print(f"key bindings    : {bindings}")
+    print(f"no-player marks : {no_player}")
     print(f"chat messages   : {len(chats)}")
     print(f"assets          : {len(assets)} "
           f"({sum(1 for v in assets.values() if v)} with data)")
