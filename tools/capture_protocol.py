@@ -15,6 +15,9 @@ Usage:
     # against the device (the app must not also be connected on some builds)
     adb forward tcp:48291 tcp:48291
     python tools/capture_protocol.py --out captures
+
+    # chat round trip: say it, then look for it in the captured chat lines
+    python tools/capture_protocol.py --out captures --say "hello from the harness"
 """
 import argparse
 import base64
@@ -35,6 +38,11 @@ def main():
     ap.add_argument("--connect-timeout", type=float, default=180.0,
                     help="keep retrying the connect for this long, so this can "
                          "be started before the client finishes loading")
+    ap.add_argument("--say", default=None,
+                    help="send this as a CHAT: command once connected. The "
+                         "server echoes chat back, so seeing it in the captured "
+                         "chat lines below is the round-trip test for sending. "
+                         "A leading / makes it a command, exactly as in game.")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -56,8 +64,14 @@ def main():
     assets = {}
     states = 0
     maps = 0
+    bindings = 0
+    chats = []
     first_state = None
     last_map_meta = None
+
+    if args.say:
+        sock.sendall(("CHAT:" + args.say + "\n").encode("utf-8"))
+        print(f"sent CHAT:{args.say}")
 
     sock.settimeout(2.0)
     buf = b""
@@ -101,25 +115,51 @@ def main():
                     name = msg["itemId"].replace(":", "_")
                     with open(os.path.join(args.out, f"icon_{name}.png"), "wb") as f:
                         f.write(base64.b64decode(msg["data"]))
+            elif kind == "chat":
+                chats.append(msg.get("segments") or [])
+            elif kind == "bindings":
+                # Counted rather than dumped -- it's a hundred-odd entries and
+                # the app's picker is where they're actually checked. Counting
+                # it here at all is what keeps it out of the state tally below.
+                bindings = len(msg.get("bindings") or [])
             else:
                 states += 1
                 if first_state is None:
                     first_state = msg
 
         # Everything interesting has arrived; no reason to sit out the timer.
-        if maps >= 3 and assets and states:
+        # With --say, "everything" includes the echo of what we said, which is
+        # the whole point of that run -- a round trip through the server takes
+        # longer than the first three map tiles.
+        if maps >= 3 and assets and states and (not args.say or chats):
             break
 
     print()
     print("=" * 60)
     print(f"HUD state lines : {states}")
     print(f"map tiles       : {maps}")
+    print(f"key bindings    : {bindings}")
+    print(f"chat messages   : {len(chats)}")
     print(f"assets          : {len(assets)} "
           f"({sum(1 for v in assets.values() if v)} with data)")
 
     missing = sorted(k for k, v in assets.items() if not v)
     if missing:
         print(f"assets MISSING  : {missing}")
+
+    if chats:
+        print()
+        print("chat:")
+        for segments in chats:
+            # Colours are the only styling that survives the mod's flattening,
+            # so they're what's worth printing beside the text -- a message that
+            # arrives as one uncoloured run when it should be several is the
+            # failure this catches.
+            text = "".join(s.get("text", "") for s in segments)
+            colors = [s.get("color") for s in segments]
+            shown = ", ".join("default" if c is None else f"#{c:06X}" for c in colors)
+            print(f"  {text!r}")
+            print(f"      {len(segments)} run(s): {shown}")
 
     if first_state:
         print()

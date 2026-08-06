@@ -151,6 +151,22 @@ public class HudStateServer {
         writeLine(client, gson.toJson(new BindingsResponse("bindings", bindings)));
     }
 
+    /**
+     * Broadcasts one chat message, as coloured runs.
+     *
+     * See {@link ChatRelay} for why it's runs rather than a plain string, and
+     * why only colour survives the flattening.
+     */
+    public void broadcastChat(List<ChatRelay.Segment> segments) {
+        send(gson.toJson(new ChatResponse("chat", segments)));
+    }
+
+    /** One chat message to a single client -- used for the backlog a newly
+     *  connected app gets, which nobody else needs re-sent. */
+    public void sendChatTo(Socket client, List<ChatRelay.Segment> segments) {
+        writeLine(client, gson.toJson(new ChatResponse("chat", segments)));
+    }
+
     /** Broadcasts one rendered map tile. */
     public void broadcastMap(MapRenderer.Tile tile) {
         send(gson.toJson(new MapResponse(
@@ -211,6 +227,12 @@ public class HudStateServer {
      * resolution happens here and not in the app.
      */
     public record BindingsResponse(String type, List<KeyBindingCatalog.Entry> bindings) {}
+
+    /**
+     * type is always "chat". One message, as a list of coloured runs -- see
+     * {@link ChatRelay} for why the styling is reduced to colour alone.
+     */
+    public record ChatResponse(String type, List<ChatRelay.Segment> segments) {}
 
     /** type is always "asset". data is null when the resource pack stack
      *  doesn't provide that texture, so the app can fall back immediately
