@@ -151,6 +151,11 @@ public class ThorHudClient implements ClientModInitializer {
                         incoming.substring(HUD_VISIBILITY_PREFIX.length()));
             } else if (incoming.startsWith(CHAT_PREFIX)) {
                 ChatRelay.send(client, incoming.substring(CHAT_PREFIX.length()));
+            } else if (incoming.startsWith(ContainerRelay.CLICK_PREFIX)) {
+                // Also outside CommandDispatcher, and for a stronger reason
+                // than chat: a slot click is only meaningful *while* a screen
+                // is open, which is exactly when the dispatcher drops things.
+                ContainerRelay.click(client, incoming.substring(ContainerRelay.CLICK_PREFIX.length()));
             } else {
                 CommandDispatcher.dispatch(incoming);
             }
@@ -159,6 +164,13 @@ public class ThorHudClient implements ClientModInitializer {
         pushBundleToNewClients();
         drainIconQueue(client);
         maybeBroadcastMap(client);
+
+        // Cheap when nothing has moved -- it rebuilds the state and compares,
+        // and only touches the socket on a difference. Still skipped with no
+        // client, on the same reasoning as the map.
+        if (HUD_SERVER.hasClients()) {
+            ContainerRelay.broadcastIfChanged(client, HUD_SERVER);
+        }
     }
 
     /**
@@ -206,6 +218,14 @@ public class ThorHudClient implements ClientModInitializer {
             List<List<ChatRelay.Segment>> backlog = ChatRelay.history();
             for (List<ChatRelay.Segment> message : backlog) {
                 HUD_SERVER.sendChatTo(client, message);
+            }
+
+            // The container state is only sent on change, so a client that
+            // connects while the player stands still would otherwise see an
+            // empty inventory until they next moved an item.
+            ContainerRelay.ScreenHandlerState container = ContainerRelay.current();
+            if (container != null) {
+                HUD_SERVER.sendContainerTo(client, container);
             }
 
             System.out.println("[ThorHud] Sent HUD asset bundle, key bindings and "

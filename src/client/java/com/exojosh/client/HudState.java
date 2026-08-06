@@ -77,7 +77,13 @@ public record HudState(
         return slotFrom(player.getOffHandStack());
     }
 
-    private static HotbarSlot slotFrom(ItemStack stack) {
+    /**
+     * One stack in the shape the app renders. Public because
+     * {@link ContainerRelay} describes inventory slots with exactly the same
+     * record — same 16x16 icon, same count/durability/glint decorations — so
+     * the app draws both with one code path.
+     */
+    public static HotbarSlot slotFrom(ItemStack stack) {
         if (stack.isEmpty()) {
             return new HotbarSlot("minecraft:air", 0, 0, 0, false);
         }
