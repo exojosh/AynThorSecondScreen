@@ -38,6 +38,12 @@ def main():
     ap.add_argument("--connect-timeout", type=float, default=180.0,
                     help="keep retrying the connect for this long, so this can "
                          "be started before the client finishes loading")
+    ap.add_argument("--icon", action="append", default=[], metavar="ITEM_ID",
+                    help="request this item's icon and write it to the output "
+                         "dir; repeatable. The mod only renders icons on "
+                         "request, so without this nothing exercises the item "
+                         "render path. Pair it with --say '/give ...' to check "
+                         "an item you aren't carrying.")
     ap.add_argument("--say", default=None,
                     help="send this as a CHAT: command once connected. The "
                          "server echoes chat back, so seeing it in the captured "
@@ -66,12 +72,23 @@ def main():
     maps = 0
     bindings = 0
     chats = []
+    icons = {}
     first_state = None
     last_map_meta = None
 
     if args.say:
         sock.sendall(("CHAT:" + args.say + "\n").encode("utf-8"))
         print(f"sent CHAT:{args.say}")
+
+    if args.icon:
+        # After --say, so a /give has been sent before we ask for the icon of
+        # the thing it gave us -- the mod prefers the player's actual stack, so
+        # component-driven rendering (enchantments, dye, damage) only shows up
+        # once it's really in the inventory.
+        time.sleep(1.0)
+        for item in args.icon:
+            sock.sendall(("ICON:" + item + "\n").encode("utf-8"))
+        print(f"requested {len(args.icon)} icon(s): {', '.join(args.icon)}")
 
     sock.settimeout(2.0)
     buf = b""
@@ -111,10 +128,18 @@ def main():
                     with open(path, "wb") as f:
                         f.write(base64.b64decode(msg["data"]))
             elif kind == "icon":
+                item_id = msg["itemId"]
                 if msg.get("data"):
-                    name = msg["itemId"].replace(":", "_")
-                    with open(os.path.join(args.out, f"icon_{name}.png"), "wb") as f:
+                    name = item_id.replace(":", "_")
+                    path = os.path.join(args.out, f"icon_{name}.png")
+                    with open(path, "wb") as f:
                         f.write(base64.b64decode(msg["data"]))
+                    icons[item_id] = path
+                else:
+                    # An explicit "no icon for this" reply, not a dropped
+                    # request -- worth distinguishing, since the two used to
+                    # look identical from out here.
+                    icons[item_id] = None
             elif kind == "chat":
                 chats.append(msg.get("segments") or [])
             elif kind == "bindings":
@@ -131,7 +156,9 @@ def main():
         # With --say, "everything" includes the echo of what we said, which is
         # the whole point of that run -- a round trip through the server takes
         # longer than the first three map tiles.
-        if maps >= 3 and assets and states and (not args.say or chats):
+        if (maps >= 3 and assets and states
+                and (not args.say or chats)
+                and len(icons) >= len(args.icon)):
             break
 
     print()
@@ -146,6 +173,15 @@ def main():
     missing = sorted(k for k, v in assets.items() if not v)
     if missing:
         print(f"assets MISSING  : {missing}")
+
+    if args.icon or icons:
+        print()
+        print("icons:")
+        for item_id, path in icons.items():
+            print(f"  {item_id:<40} {os.path.basename(path) if path else 'NO ICON'}")
+        for item_id in args.icon:
+            if item_id not in icons:
+                print(f"  {item_id:<40} NO REPLY (request dropped?)")
 
     if chats:
         print()

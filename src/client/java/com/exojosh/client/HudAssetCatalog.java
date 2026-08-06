@@ -65,6 +65,12 @@ public final class HudAssetCatalog {
         // app puts the off-hand slot under the player's thumb at the right edge
         // of the screen rather than beside the hotbar (see HotbarRow).
         ASSETS.put("hotbar_offhand_right", "textures/gui/sprites/hud/hotbar_offhand_right.png");
+        // The enchantment shimmer. Served rather than composited into the icon
+        // because an icon is a still PNG and vanilla's glint scrolls -- see the
+        // note on ItemIconRenderer.flushItemCommands. 128x128, and vanilla
+        // samples it with linear filtering (its .mcmeta sets blur), unlike every
+        // other texture here.
+        ASSETS.put("enchanted_glint_item", "textures/misc/enchanted_glint_item.png");
         // Not a HUD sprite: the bitmap font sheet the app draws text from,
         // the block texture it tiles as a background, and the paper sheet the
         // live map is drawn on -- the last two live outside textures/gui/ but
