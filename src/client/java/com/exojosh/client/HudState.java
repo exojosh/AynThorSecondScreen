@@ -1,5 +1,7 @@
 package com.exojosh.client;
 
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -32,6 +34,25 @@ public record HudState(
         int selectedSlot,
         int air,
         int maxAir,
+        /**
+         * The game mode's own name ({@code SURVIVAL}, {@code CREATIVE},
+         * {@code ADVENTURE}, {@code SPECTATOR}), or null against a world that
+         * hasn't reported one yet.
+         *
+         * Sent raw rather than reduced to "should the status bars show" for the
+         * same reason air is: the HUD decision belongs to whatever is drawing
+         * the HUD. Vanilla's own rule is {@code interactionManager.hasStatusBars()},
+         * i.e. survival or adventure.
+         */
+        String gameMode,
+        /**
+         * Which set of heart sprites to draw, from
+         * {@code InGameHud.HeartType.fromPlayerState}: NORMAL, POISONED,
+         * WITHERED or FROZEN, in that precedence.
+         */
+        String heartType,
+        /** Hardcore worlds use a different rim on every heart sprite. */
+        boolean hardcore,
         List<HotbarSlot> hotbar,
         /** The off-hand stack, in the same shape as a hotbar slot. Always
          *  present -- an empty off-hand is sent as a minecraft:air slot rather
@@ -59,6 +80,29 @@ public record HudState(
             int maxDamage,
             boolean hasGlint
     ) {}
+
+    /**
+     * Which heart sprite set applies, following
+     * {@code InGameHud.HeartType.fromPlayerState} — including its precedence,
+     * which is poison over wither over freezing rather than any combination.
+     */
+    public static String heartTypeOf(PlayerEntity player) {
+        if (player.hasStatusEffect(StatusEffects.POISON)) return "POISONED";
+        if (player.hasStatusEffect(StatusEffects.WITHER)) return "WITHERED";
+        if (player.isFrozen()) return "FROZEN";
+        return "NORMAL";
+    }
+
+    /** The current game mode's name, or null before one is known. */
+    public static String gameModeOf(MinecraftClient client) {
+        if (client.interactionManager == null) return null;
+        return client.interactionManager.getCurrentGameMode().name();
+    }
+
+    /** Whether this is a hardcore world, which changes every heart sprite. */
+    public static boolean isHardcore(PlayerEntity player) {
+        return player.getEntityWorld().getLevelProperties().isHardcore();
+    }
 
     public static List<HotbarSlot> hotbarFromInventory(PlayerEntity player) {
         List<HotbarSlot> slots = new ArrayList<>(9);
