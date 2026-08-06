@@ -17,7 +17,12 @@ jobs:
       - name: setup jdk
         uses: actions/setup-java@v5
         with:
-          java-version: '25'
+          # 21, matching the toolchain this project actually targets
+          # (build.gradle pins release/source/target to 21) and the JDK the
+          # README asks contributors to install. Building on 25 meant CI was
+          # exercising a compiler nobody develops against, so a failure there
+          # said nothing useful and a pass guaranteed nothing locally.
+          java-version: '21'
           distribution: 'microsoft'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew
