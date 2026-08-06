@@ -12,6 +12,7 @@ import net.minecraft.util.Identifier;
 import java.net.Socket;
 import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
@@ -51,6 +52,19 @@ public class ThorHudClient implements ClientModInitializer {
     private static final String HUD_VISIBILITY_PREFIX = "HUD:";
 
     /**
+     * A line of chat to say as the player, e.g. {@code CHAT:hello} or
+     * {@code CHAT:/time set day}.
+     *
+     * Handled here rather than in {@link CommandDispatcher} for a reason that
+     * isn't just tidiness: the dispatcher drops every command while a screen is
+     * open, because vanilla wouldn't have drained a keybinding then either.
+     * Chat doesn't go through a KeyBinding at all -- it's a packet -- so that
+     * reasoning doesn't apply, and a player with their inventory open should
+     * still be able to answer someone.
+     */
+    private static final String CHAT_PREFIX = "CHAT:";
+
+    /**
      * Cap how many icons we render per tick. Each one is an offscreen draw
      * plus a fenced GPU readback; a freshly-connected app asks for up to 9 at
      * once and there's no reason to do them all in a single frame.
@@ -86,6 +100,11 @@ public class ThorHudClient implements ClientModInitializer {
         // Nothing is shown in game until it asks, which matches what the old
         // unconditional removeElement() calls did.
         GameHudVisibility.install();
+
+        // Registers the receive-message hooks. Done before the server starts
+        // so nothing that arrives during startup is missed, and so the backlog
+        // exists by the time the first client connects.
+        ChatRelay.install(HUD_SERVER);
 
         HUD_SERVER.start();
 
@@ -130,6 +149,8 @@ public class ThorHudClient implements ClientModInitializer {
             } else if (incoming.startsWith(HUD_VISIBILITY_PREFIX)) {
                 GameHudVisibility.setShownInGame(
                         incoming.substring(HUD_VISIBILITY_PREFIX.length()));
+            } else if (incoming.startsWith(CHAT_PREFIX)) {
+                ChatRelay.send(client, incoming.substring(CHAT_PREFIX.length()));
             } else {
                 CommandDispatcher.dispatch(incoming);
             }
@@ -178,8 +199,17 @@ public class ThorHudClient implements ClientModInitializer {
                 HUD_SERVER.sendAssetTo(client, key, HudAssetCatalog.resolveBase64Png(key).orElse(null));
             }
             HUD_SERVER.sendBindingsTo(client, KeyBindingCatalog.snapshot());
-            System.out.println("[ThorHud] Sent HUD asset bundle and key bindings to "
-                    + client.getRemoteSocketAddress());
+
+            // Chat backlog last, so it lands after the font sheet it needs to
+            // be drawn with. Nothing re-sends chat on its own, so without this
+            // an app restarted mid-session would come back to an empty log.
+            List<List<ChatRelay.Segment>> backlog = ChatRelay.history();
+            for (List<ChatRelay.Segment> message : backlog) {
+                HUD_SERVER.sendChatTo(client, message);
+            }
+
+            System.out.println("[ThorHud] Sent HUD asset bundle, key bindings and "
+                    + backlog.size() + " chat messages to " + client.getRemoteSocketAddress());
         }
     }
 
