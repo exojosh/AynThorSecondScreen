@@ -20,10 +20,15 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *      whatever server sync the selected slot needs. Reimplementing that
  *      here would mean re-deriving all of it.
  *
- *   2. Anything else -- looked up in COMMANDS, a code -> KeyBinding map you
- *      define. The vanilla bindings below are just a starting set; add
- *      whatever your input grid actually needs, including other mods' own
- *      KeyBinding instances if you want to trigger those.
+ *   2. "BIND:&lt;id&gt;" -- presses the binding with that translation key
+ *      ({@code BIND:key.inventory}), resolved through KeyBinding.byId. This is
+ *      the form the configurable input grid uses: the app got the id from
+ *      {@link KeyBindingCatalog}, so no table here has to know it, and other
+ *      mods' bindings work with no entry anywhere.
+ *
+ *   3. Anything else -- looked up in COMMANDS, a fixed code -> KeyBinding map.
+ *      Superseded by (2) and kept for compatibility with app builds that
+ *      predate it; see the note on that map.
  *
  * <h2>Codes name actions, not keys</h2>
  * "SWAP", not "F". Naming codes after keyboard keys was a bug source and a
@@ -58,6 +63,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public class CommandDispatcher {
 
+    /** Presses a binding by its translation key, e.g. {@code BIND:key.drop}. */
+    private static final String BINDING_PREFIX = "BIND:";
+
     private static final Map<String, KeyBinding> COMMANDS = new HashMap<>();
     private static final ConcurrentLinkedQueue<KeyBinding> PENDING_RELEASE = new ConcurrentLinkedQueue<>();
     private static boolean initialized = false;
@@ -66,6 +74,11 @@ public class CommandDispatcher {
         if (initialized) return;
         var options = MinecraftClient.getInstance().options;
 
+        // Superseded by BIND:<id>, which needs no table at all. Kept because
+        // an app build predating the change still sends these, and because the
+        // one thing they give that ids don't is a stable name for an action
+        // whose binding id could move between game versions.
+        //
         // Codes name the *action*, not a keyboard key.
         //
         // They used to name keys, and got it wrong: "R" was bound to swap-hands
@@ -132,6 +145,22 @@ public class CommandDispatcher {
         Integer slot = parseHotbarSlot(code);
         if (slot != null) {
             pressForOneTick(client.options.hotbarKeys[slot - 1]);
+            return;
+        }
+
+        if (code.startsWith(BINDING_PREFIX)) {
+            String id = code.substring(BINDING_PREFIX.length());
+            // byId covers every binding ever constructed, modded ones included,
+            // so nothing has to be registered here for a mod's action to be
+            // usable from the second screen.
+            KeyBinding byId = KeyBinding.byId(id);
+            if (byId == null) {
+                // Reachable in normal use: the app persists ids, so removing
+                // the mod that owned one leaves a button pointing at nothing.
+                System.out.println("[ThorHud] No key binding with id: " + id);
+                return;
+            }
+            pressForOneTick(byId);
             return;
         }
 
