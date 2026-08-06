@@ -7,6 +7,8 @@ import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 
 import java.net.Socket;
@@ -92,6 +94,10 @@ public class ThorHudClient implements ClientModInitializer {
      */
     private boolean hadPlayer = false;
 
+    /** So the bind-failure chat message is said once per failure, not per
+     *  tick -- the accept thread retries every few seconds. */
+    private boolean warnedAboutBindFailure = false;
+
     // Loopback-only. Nothing here ever needs to leave the device.
     public static final HudStateServer HUD_SERVER = new HudStateServer(48291);
 
@@ -134,6 +140,7 @@ public class ThorHudClient implements ClientModInitializer {
             return;
         }
         hadPlayer = true;
+        warnAboutBindFailureOnce(client);
 
         HudState state = new HudState(
                 player.getHealth(),
@@ -187,6 +194,37 @@ public class ThorHudClient implements ClientModInitializer {
         if (HUD_SERVER.hasClients()) {
             ContainerRelay.broadcastIfChanged(client, HUD_SERVER);
         }
+    }
+
+    /**
+     * Says in the player's own chat that the port is taken.
+     *
+     * **This is the one error whose audience can't be reached the usual way.**
+     * Everything else the mod complains about shows up on the second screen; a
+     * failed bind is precisely the case where the second screen is the thing
+     * that isn't working, and the game log is on a device the player isn't
+     * looking at. The top screen is the only display guaranteed to be working
+     * when this happens.
+     *
+     * Said once per failure rather than per tick — the accept thread retries
+     * every few seconds and the message would otherwise fill the chat. Reset
+     * when the bind succeeds, so a conflict that recurs is reported again.
+     */
+    private void warnAboutBindFailureOnce(MinecraftClient client) {
+        String failure = HUD_SERVER.bindFailure();
+        if (failure == null) {
+            warnedAboutBindFailure = false;
+            return;
+        }
+        if (warnedAboutBindFailure) return;
+        warnedAboutBindFailure = true;
+
+        if (client.inGameHud == null) return;
+        client.inGameHud.getChatHud().addMessage(Text.literal(
+                        "[Thor HUD] Port 48291 is in use, so the second screen can't connect. "
+                                + "A leftover 'adb reverse tcp:48291 tcp:48291' is the usual cause. "
+                                + "Clear it and this will reconnect on its own.")
+                .formatted(Formatting.RED));
     }
 
     /**
