@@ -85,6 +85,7 @@ def main():
     icons = {}
     containers = []
     no_player = 0
+    hello = None
     move_sent = False
     first_state = None
     last_map_meta = None
@@ -169,6 +170,11 @@ def main():
                     # request -- worth distinguishing, since the two used to
                     # look identical from out here.
                     icons[item_id] = None
+            elif kind == "hello":
+                # The mod identifying itself, always the first line. Counted
+                # separately or it lands in the untyped HUD-state bucket and
+                # becomes the "first HUD state" printed below.
+                hello = msg
             elif kind == "noplayer":
                 # The transition out of a world. Printed as it happens rather
                 # than tallied, because *when* it arrives relative to the last
@@ -220,6 +226,7 @@ def main():
     print(f"map tiles       : {maps}")
     print(f"key bindings    : {bindings}")
     print(f"no-player marks : {no_player}")
+    print(f"hello           : {hello or 'NONE (is this really the mod?)'}")
     print(f"chat messages   : {len(chats)}")
     print(f"assets          : {len(assets)} "
           f"({sum(1 for v in assets.values() if v)} with data)")

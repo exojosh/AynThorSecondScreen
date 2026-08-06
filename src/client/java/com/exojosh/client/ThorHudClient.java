@@ -157,6 +157,9 @@ public class ThorHudClient implements ClientModInitializer {
                 player.getInventory().getSelectedSlot(),
                 player.getAir(),
                 player.getMaxAir(),
+                HudState.gameModeOf(client),
+                HudState.heartTypeOf(player),
+                HudState.isHardcore(player),
                 HudState.hotbarFromInventory(player),
                 HudState.offhandFrom(player)
         );

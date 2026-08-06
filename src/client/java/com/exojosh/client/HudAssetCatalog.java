@@ -47,6 +47,29 @@ public final class HudAssetCatalog {
         // Absorption ("golden") hearts, drawn in slots past the normal ones.
         ASSETS.put("heart_absorbing_full", "textures/gui/sprites/hud/heart/absorbing_full.png");
         ASSETS.put("heart_absorbing_half", "textures/gui/sprites/hud/heart/absorbing_half.png");
+        // Heart variants. Vanilla picks a *set* from the player's state
+        // (InGameHud.HeartType.fromPlayerState) and then a hardcore variant of
+        // that set from the world, so every combination needs its own sprite.
+        // The blinking pair of each is deliberately not served -- that's the
+        // damage-flash animation, which is its own open item.
+        ASSETS.put("heart_poisoned_full", "textures/gui/sprites/hud/heart/poisoned_full.png");
+        ASSETS.put("heart_poisoned_half", "textures/gui/sprites/hud/heart/poisoned_half.png");
+        ASSETS.put("heart_withered_full", "textures/gui/sprites/hud/heart/withered_full.png");
+        ASSETS.put("heart_withered_half", "textures/gui/sprites/hud/heart/withered_half.png");
+        ASSETS.put("heart_frozen_full", "textures/gui/sprites/hud/heart/frozen_full.png");
+        ASSETS.put("heart_frozen_half", "textures/gui/sprites/hud/heart/frozen_half.png");
+        // Hardcore reuses the same four sets with a different rim.
+        ASSETS.put("heart_hardcore_full", "textures/gui/sprites/hud/heart/hardcore_full.png");
+        ASSETS.put("heart_hardcore_half", "textures/gui/sprites/hud/heart/hardcore_half.png");
+        ASSETS.put("heart_poisoned_hardcore_full", "textures/gui/sprites/hud/heart/poisoned_hardcore_full.png");
+        ASSETS.put("heart_poisoned_hardcore_half", "textures/gui/sprites/hud/heart/poisoned_hardcore_half.png");
+        ASSETS.put("heart_withered_hardcore_full", "textures/gui/sprites/hud/heart/withered_hardcore_full.png");
+        ASSETS.put("heart_withered_hardcore_half", "textures/gui/sprites/hud/heart/withered_hardcore_half.png");
+        ASSETS.put("heart_frozen_hardcore_full", "textures/gui/sprites/hud/heart/frozen_hardcore_full.png");
+        ASSETS.put("heart_frozen_hardcore_half", "textures/gui/sprites/hud/heart/frozen_hardcore_half.png");
+        ASSETS.put("heart_container_hardcore", "textures/gui/sprites/hud/heart/container_hardcore.png");
+        ASSETS.put("heart_absorbing_hardcore_full", "textures/gui/sprites/hud/heart/absorbing_hardcore_full.png");
+        ASSETS.put("heart_absorbing_hardcore_half", "textures/gui/sprites/hud/heart/absorbing_hardcore_half.png");
         // ... but armor and food are flat with an underscore. Not a typo.
         ASSETS.put("armor_full", "textures/gui/sprites/hud/armor_full.png");
         ASSETS.put("armor_half", "textures/gui/sprites/hud/armor_half.png");
