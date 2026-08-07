@@ -2,14 +2,15 @@
 	"schemaVersion": 1,
 	"id": "aynthor_secondscreen_v1_21",
 	"version": "${version}",
-	"name": "aynthor_secondscreen_v1_21",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "AYN Thor Second Screen",
+	"description": "Moves Minecraft's HUD to the AYN Thor's bottom screen. Hides the vanilla HUD and streams health, hunger, armor, breath, XP, the hotbar, a live map, the open inventory and chat over a loopback socket to the companion Android app, which draws them with the game's own textures and sends taps, key binds and chat back.",
 	"authors": [
-		"Me!"
+		"exojosh"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/exojosh/AynThorSecondScreen",
+		"sources": "https://github.com/exojosh/AynThorSecondScreen",
+		"issues": "https://github.com/exojosh/AynThorSecondScreen/issues"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/aynthor_secondscreen_v1_21/icon.png",
