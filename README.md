@@ -72,7 +72,7 @@ pack applies to the second screen too**, with nothing to copy anywhere.
 
 ### 2. The companion app
 
-Install **`AynThorSecondScreen-1.0.apk`** from the
+Install the APK from the
 [companion app's releases](https://github.com/exojosh/Android_AynThor_MinecraftSecondScreen/releases),
 or build it yourself:
 
