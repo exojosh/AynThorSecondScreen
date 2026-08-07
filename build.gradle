@@ -70,11 +70,14 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
-	withSourcesJar()
-
+	// Deliberately *no* withSourcesJar(). The template ships it, and it put a
+	// second jar next to the mod in build/libs -- which matters here because
+	// installing this mod means picking a file out of that folder in a
+	// launcher's import dialog on a handheld. A sources jar imported by mistake
+	// is not an error anyone gets told about: it simply doesn't load, and the
+	// second screen stays dark with nothing to explain why. One build, one jar.
+	//
+	// The sources are on GitHub; nobody needs them zipped beside the release.
 	sourceCompatibility = JavaVersion.VERSION_21
 	targetCompatibility = JavaVersion.VERSION_21
 }
