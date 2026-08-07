@@ -94,6 +94,18 @@ public final class HudAssetCatalog {
         // samples it with linear filtering (its .mcmeta sets blur), unlike every
         // other texture here.
         ASSETS.put("enchanted_glint_item", "textures/misc/enchanted_glint_item.png");
+        // GUI chrome, so the app's own controls are the game's controls rather
+        // than Material buttons over a dirt background. The three button states
+        // are nine-sliced sprites; note button/button_highlighted declare a
+        // border of 3 in their .mcmeta but button_disabled declares 1, so the
+        // app can't assume one number for all three (see MinecraftGui.kt).
+        // container/slot is the generic 18x18 inventory cell -- a real sprite in
+        // its own right since the 1.21.2 split, not something to crop out of
+        // container/inventory.png.
+        ASSETS.put("widget_button", "textures/gui/sprites/widget/button.png");
+        ASSETS.put("widget_button_highlighted", "textures/gui/sprites/widget/button_highlighted.png");
+        ASSETS.put("widget_button_disabled", "textures/gui/sprites/widget/button_disabled.png");
+        ASSETS.put("container_slot", "textures/gui/sprites/container/slot.png");
         // Not a HUD sprite: the bitmap font sheet the app draws text from,
         // the block texture it tiles as a background, and the paper sheet the
         // live map is drawn on -- the last two live outside textures/gui/ but
