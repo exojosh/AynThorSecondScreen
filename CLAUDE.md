@@ -117,10 +117,12 @@ The main (non-client) source set (`src/main/java/com/exojosh/`) is untouched Fab
 
 - The compatibility icon path serves the active raw item/block texture. It does
   not yet reproduce vanilla's composed, tinted, or 3D item-model rendering.
+  "Raw" describes the resource lookup path, not necessarily a visible
+  difference; the tested items were reported to look the same as in 1.21.11.
 - A local 26.2 development client reached the render thread, loaded the mod,
-  bound the socket, and returned the hello frame. Authenticated-world,
-  companion-app, and on-device AYN Thor validation still need the relevant
-  account and hardware.
+  bound the socket, and returned the hello frame. A physical AYN Thor smoke
+  test has since been reported successful with no noticed bugs; a complete
+  flow-by-flow gameplay test matrix remains unrecorded.
 - The package name is settled at `com.exojosh` (main) / `com.exojosh.client`
   (client), and the mod id remains `aynthor_secondscreen_v1_21` for companion
   compatibility.

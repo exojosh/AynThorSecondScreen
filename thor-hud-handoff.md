@@ -140,8 +140,13 @@ recognize the connection.
 
 ## 5. Known bugs / unresolved issues
 
-- **Item icons use the raw resource-manager fallback on 26.2.** The old offscreen framebuffer/command-queue path was removed by the 26.2 GUI rendering overhaul, so icons requiring composed/tinted/3D model rendering may be less accurate than vanilla. Simple item/block textures remain supported and the app's glint overlay still uses `hasGlint`.
-- **On-device gameplay validation remains outstanding.** The development client and socket hello frame were verified locally; joining an authenticated world and exercising HUD/container/map/icon flows still requires a Minecraft account and the companion device/app.
+- **Item icons use the resource-manager texture fallback on 26.2.** "Raw"
+  describes how the bytes are obtained, not a visible failure mode. A physical
+  AYN Thor smoke test reported that the items looked the same as in the
+  1.21.11 version; composed/tinted/3D edge cases remain unverified.
+- **Physical AYN Thor smoke test completed.** The 26.2 build was tested on the
+  device and no bugs were noticed. A comprehensive flow-by-flow test matrix
+  for every HUD/container/map/icon state is still outstanding.
 - **Hotbar background pixel alignment unsolved.** If/when switching to vanilla's real `hotbar.png`, naively stretching it behind a `Row` of equal-width Compose children will not match vanilla's actual fixed-pixel per-slot layout or its separate selected-slot overlay sprite. Needs either fixed slot widths matching the source texture or explicit offset-based positioning.
 - The mod id and Java package names are intentionally unchanged for companion-app compatibility; the old source-template mixins were removed from both mixin configs.
 - No reconnect backoff on the Android side (flat 1.5s retry) — acceptable for development, not hardened.
