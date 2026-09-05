@@ -1,7 +1,7 @@
 package com.exojosh.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,8 +31,8 @@ import java.util.Optional;
  * underscore). Keeping the mapping here means a version bump is a one-file
  * change on this side and the app never needs to know.
  *
- * Paths confirmed against the sprite identifiers in InGameHud/ExperienceBar
- * for 1.21.11: a GUI sprite "hud/heart/full" lives at
+ * Paths confirmed against the sprite identifiers in the Minecraft 26.2 client:
+ * a GUI sprite "hud/heart/full" lives at
  * textures/gui/sprites/hud/heart/full.png.
  */
 public final class HudAssetCatalog {
@@ -133,14 +133,14 @@ public final class HudAssetCatalog {
         if (path == null) return Optional.empty();
 
         try {
-            Identifier texture = Identifier.ofVanilla(path);
-            var resourceOpt = MinecraftClient.getInstance().getResourceManager().getResource(texture);
+            Identifier texture = Identifier.withDefaultNamespace(path);
+            var resourceOpt = Minecraft.getInstance().getResourceManager().getResource(texture);
             if (resourceOpt.isEmpty()) {
                 System.out.println("[ThorHud] No resource for HUD asset " + key + " (" + path + ")");
                 return Optional.empty();
             }
 
-            try (InputStream in = resourceOpt.get().getInputStream()) {
+            try (InputStream in = resourceOpt.get().open()) {
                 return Optional.of(Base64.getEncoder().encodeToString(in.readAllBytes()));
             }
         } catch (IOException | RuntimeException e) {

@@ -2,7 +2,7 @@ package com.exojosh.client;
 
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
 
 import java.util.Arrays;
 import java.util.EnumSet;
@@ -87,7 +87,7 @@ public final class GameHudVisibility {
             for (Identifier id : element.vanillaIds) {
                 HudElementRegistry.replaceElement(id, original -> (context, tickCounter) -> {
                     if (SHOWN_IN_GAME.contains(element)) {
-                        original.render(context, tickCounter);
+                        original.extractRenderState(context, tickCounter);
                     }
                 });
             }
