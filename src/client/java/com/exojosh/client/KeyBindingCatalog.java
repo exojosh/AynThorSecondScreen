@@ -1,8 +1,8 @@
 package com.exojosh.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -23,17 +23,16 @@ import java.util.List;
  * nothing left to drift.
  *
  * <h2>Where the list comes from</h2>
- * {@code GameOptions.allKeys}, which is public and already includes other mods'
- * bindings -- Fabric's key-binding API appends registered bindings into that
- * same array. The obvious alternative, an {@code @Accessor} on KeyBinding's
- * private static {@code KEYS_BY_ID} map, would need a mixin to reach the same
+ * {@code Minecraft.options.keyMappings}, which is public and already includes
+ * other mods' bindings. The obvious alternative, an {@code @Accessor} on
+ * {@link KeyMapping}'s private registry, would need a mixin to reach the same
  * set, so it isn't used.
  *
  * <h2>What each field is for</h2>
  * {@link Entry#id()} is the binding's translation key ({@code key.inventory}),
  * and it is the **wire identity**: the app stores it and sends it back as
  * {@code BIND:<id>}, which {@link CommandDispatcher} resolves through
- * {@code KeyBinding.byId}. Everything else is for display only, and is resolved
+ * {@link KeyMapping#get(String)}. Everything else is for display only, and is resolved
  * here rather than in the app because only this side has the language files:
  * {@code label} is the action's own translated name, {@code boundKey} is
  * whatever key the player currently has it on, and {@code category} groups the
@@ -71,19 +70,19 @@ public final class KeyBindingCatalog {
 
     /** The current bindings, sorted by category then label, as the picker shows them. */
     public static List<Entry> snapshot() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.options == null) return List.of();
 
         List<Entry> entries = new ArrayList<>();
-        for (KeyBinding binding : client.options.allKeys) {
+        for (KeyMapping binding : client.options.keyMappings) {
             if (binding == null) continue;
             entries.add(new Entry(
-                    binding.getId(),
+                    binding.getName(),
                     // Vanilla's own controls screen renders the binding name
                     // this way; the id doubles as its translation key.
-                    Text.translatable(binding.getId()).getString(),
-                    binding.getCategory().getLabel().getString(),
-                    binding.getBoundKeyLocalizedText().getString(),
+                    Component.translatable(binding.getName()).getString(),
+                    binding.getCategory().label().getString(),
+                    binding.getTranslatedKeyMessage().getString(),
                     binding.isUnbound()
             ));
         }

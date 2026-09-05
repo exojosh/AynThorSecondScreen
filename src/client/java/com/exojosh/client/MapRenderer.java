@@ -1,20 +1,20 @@
 package com.exojosh.client;
 
 import com.exojosh.client.mixin.NativeImageInvoker;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.block.MapColor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.fluid.FluidState;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.ChunkSectionPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.world.Heightmap;
-import net.minecraft.world.World;
-import net.minecraft.world.chunk.WorldChunk;
+import com.mojang.blaze3d.platform.NativeImage;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.SectionPos;
+import net.minecraft.util.Mth;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.level.material.MapColor;
+import net.minecraft.world.entity.player.Player;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.channels.Channels;
@@ -27,7 +27,7 @@ import java.util.Optional;
  *
  * <h2>Why it looks like vanilla</h2>
  * The colouring is vanilla's own, lifted from {@code FilledMapItem.updateColors}
- * (1.21.11 decompiled source, not recollection): take the surface block of each
+ * (the pre-26.2 implementation, not recollection): take the surface block of each
  * column, ask it for its {@link MapColor}, then pick one of four brightness
  * levels from how much the column's height changed against its neighbour. That
  * height-delta shading is the entire reason vanilla maps read as terrain rather
@@ -36,7 +36,7 @@ import java.util.Optional;
  *
  * <h2>Why it's cheap enough to run live</h2>
  * The expensive-looking part -- finding the surface -- isn't a downward scan
- * from the sky. {@code sampleHeightmap(WORLD_SURFACE, ...)} is a value the
+ * from the sky. {@code getHeight(WORLD_SURFACE, ...)} is a value the
  * chunk already maintains, so it's one lookup per column and the scan only
  * steps down past map-invisible blocks (glass, air pockets) from there.
  *
@@ -95,28 +95,28 @@ public final class MapRenderer {
      *
      * <p>Must run on the client thread: it reads world and chunk state.
      */
-    public static Optional<Tile> render(MinecraftClient client) {
-        World world = client.world;
-        PlayerEntity player = client.player;
+    public static Optional<Tile> render(Minecraft client) {
+        Level world = client.level;
+        Player player = client.player;
         if (world == null || player == null) {
             return Optional.empty();
         }
 
-        int centerX = MathHelper.floor(player.getX());
-        int centerZ = MathHelper.floor(player.getZ());
+        int centerX = Mth.floor(player.getX());
+        int centerZ = Mth.floor(player.getZ());
         int originX = centerX - HALF;
         int originZ = centerZ - HALF;
 
-        boolean hasCeiling = world.getDimension().hasCeiling();
-        int bottomY = world.getBottomY();
-        int ceilingStartY = MathHelper.clamp(
-                MathHelper.floor(player.getY()) + 1, bottomY + 1, world.getTopYInclusive());
+        boolean hasCeiling = world.dimensionType().hasCeiling();
+        int bottomY = world.getMinY();
+        int ceilingStartY = Mth.clamp(
+                Mth.floor(player.getY()) + 1, bottomY + 1, world.getMaxY() - 1);
 
-        BlockPos.Mutable pos = new BlockPos.Mutable();
-        BlockPos.Mutable probe = new BlockPos.Mutable();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
 
         // One chunk lookup per 16 columns instead of per column.
-        WorldChunk chunk = null;
+        LevelChunk chunk = null;
         int cachedChunkX = Integer.MIN_VALUE;
         int cachedChunkZ = Integer.MIN_VALUE;
 
@@ -133,8 +133,8 @@ public final class MapRenderer {
                 for (int pz = -1; pz < SIZE; pz++) {
                     int worldZ = originZ + pz;
 
-                    int chunkX = ChunkSectionPos.getSectionCoord(worldX);
-                    int chunkZ = ChunkSectionPos.getSectionCoord(worldZ);
+                    int chunkX = SectionPos.blockToSectionCoord(worldX);
+                    int chunkZ = SectionPos.blockToSectionCoord(worldZ);
                     if (chunkX != cachedChunkX || chunkZ != cachedChunkZ) {
                         chunk = world.getChunk(chunkX, chunkZ);
                         cachedChunkX = chunkX;
@@ -145,7 +145,7 @@ public final class MapRenderer {
                         // Not loaded yet. Leave it transparent -- the app draws
                         // nothing there rather than inventing terrain.
                         if (pz >= 0) {
-                            image.setColorArgb(px, pz, 0);
+                            image.setPixel(px, pz, 0);
                         }
                         previousHeight = 0.0;
                         continue;
@@ -153,7 +153,7 @@ public final class MapRenderer {
 
                     int startY = hasCeiling
                             ? ceilingStartY
-                            : chunk.sampleHeightmap(Heightmap.Type.WORLD_SURFACE, worldX, worldZ) + 1;
+                            : chunk.getHeight(Heightmap.Types.WORLD_SURFACE, worldX, worldZ) + 1;
 
                     pos.set(worldX, startY, worldZ);
 
@@ -162,14 +162,14 @@ public final class MapRenderer {
                     int y = startY;
 
                     if (y <= bottomY) {
-                        state = Blocks.BEDROCK.getDefaultState();
+                        state = Blocks.BEDROCK.defaultBlockState();
                     } else {
                         // Step down past anything that doesn't show on a map
                         // (air, glass, barriers) to the first block that does.
                         do {
                             pos.setY(--y);
                             state = chunk.getBlockState(pos);
-                        } while (state.getMapColor(world, pos) == MapColor.CLEAR && y > bottomY);
+                        } while (state.getMapColor(world, pos) == MapColor.NONE && y > bottomY);
 
                         if (y > bottomY && !state.getFluidState().isEmpty()) {
                             // Keep descending through the fluid to measure how
@@ -195,7 +195,7 @@ public final class MapRenderer {
                     if (pz >= 0) {
                         MapColor.Brightness brightness =
                                 brightnessFor(mapColor, height, previousHeight, waterDepth, worldX, worldZ);
-                        image.setColorArgb(px, pz, mapColor.getRenderColor(brightness));
+                        image.setPixel(px, pz, mapColor.calculateARGBColor(brightness));
                     }
 
                     previousHeight = height;
@@ -208,7 +208,7 @@ public final class MapRenderer {
                     originZ,
                     player.getX(),
                     player.getZ(),
-                    player.getYaw(),
+                    player.getYRot(),
                     SIZE
             ));
         } catch (Exception e) {
@@ -230,7 +230,7 @@ public final class MapRenderer {
         // checkerboard has to stay stable across the origin.
         int checker = Math.floorMod(worldX + worldZ, 2);
 
-        if (mapColor == MapColor.WATER_BLUE) {
+        if (mapColor == MapColor.WATER) {
             double shade = waterDepth * 0.1 + checker * 0.2;
             if (shade < 0.5) {
                 return MapColor.Brightness.HIGH;
@@ -246,10 +246,10 @@ public final class MapRenderer {
     }
 
     /** FilledMapItem.getFluidStateIfVisible: ice and lily pads hide the water under them. */
-    private static BlockState fluidStateIfVisible(World world, BlockState state, BlockPos pos) {
+    private static BlockState fluidStateIfVisible(Level world, BlockState state, BlockPos pos) {
         FluidState fluidState = state.getFluidState();
-        return !fluidState.isEmpty() && !state.isSideSolidFullSquare(world, pos, Direction.UP)
-                ? fluidState.getBlockState()
+        return !fluidState.isEmpty() && !state.isFaceSturdy(world, pos, Direction.UP)
+                ? fluidState.createLegacyBlock()
                 : state;
     }
 

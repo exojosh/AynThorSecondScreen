@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Fabric mod (Java 21) that runs inside Minecraft's JVM. It hides the vanilla HUD (health, hunger, XP, armor, hotbar) and streams that state every client tick over a loopback TCP socket, so a separate companion Android app can render it on a second screen. It also accepts short text commands back over the same socket (hotbar slot selection, simulated keybind presses, item-icon requests).
+A Fabric mod (Java 25) targeting Minecraft 26.2 that runs inside Minecraft's JVM. It hides the vanilla HUD (health, hunger, XP, armor, hotbar) and streams changed state over a loopback TCP socket, so a separate companion Android app can render it on a second screen. It also accepts short text commands back over the same socket (hotbar slot selection, simulated keybind presses, item-icon requests).
 
 This mod is one half of a two-process system targeting the **AYN Thor** (dual-screen Android handheld) running Minecraft via **Zalith Launcher 2**. The other half — the Android companion app that renders the HUD — lives in a sibling repo, `Android_AynThor_MinecraftSecondScreen`. The two communicate only via the socket protocol; there's no shared code or build.
 
@@ -13,21 +13,21 @@ This mod is one half of a two-process system targeting the **AYN Thor** (dual-sc
 ## Commands
 
 ```
-./gradlew build          # compile + package the mod jar
-./gradlew runClient      # launch a dev Minecraft client with the mod loaded
+sh ./gradlew build       # compile + package the 26.2 mod jar
+sh ./gradlew runClient   # launch a 26.2 dev client with the mod loaded
 ```
 
-Requires JDK 21. Uses Fabric Loom with `splitEnvironmentSourceSets()` enabled, so code lives in either `src/main` (both sides) or `src/client` (client-only — nearly all of this mod's logic lives here, since it's a client-only HUD mod). Versions (Minecraft, Yarn mappings, Loader, Fabric API) are pinned in `gradle.properties` — check there before assuming an API shape, since Yarn mappings have changed across versions used during development and a number of API calls in this codebase were written from best recollection rather than confirmed against the mappings (see `thor-hud-handoff.md` §5).
+Requires JDK 25. Uses Fabric Loom with `splitEnvironmentSourceSets()` enabled, so code lives in either `src/main` (both sides) or `src/client` (client-only — nearly all of this mod's logic lives here, since it's a client-only HUD mod). Versions (Minecraft, Loader, Fabric API) are pinned in `gradle.properties`; the 26.2 build uses Fabric's official non-remapped Mojang names.
 
 Manual protocol smoke test (no Android app needed): run `runClient`, join a world, then from another terminal:
 ```
 nc localhost 48291
 ```
-You should see one JSON line per tick.
+You should see the hello frame immediately, followed by JSON frames once you join a world.
 
 Scripted version, which is what to actually use — it auto-joins a world and dumps the whole protocol (assets, a HUD snapshot, map PNGs, bindings, chat) to disk:
 ```
-./gradlew runClient -PquickPlay="New World"
+sh ./gradlew runClient -PquickPlay="New World"
 python tools/capture_protocol.py --out captures
 python tools/capture_protocol.py --out captures --say "hello"   # chat round trip
 ```
@@ -35,11 +35,15 @@ python tools/capture_protocol.py --out captures --say "hello"   # chat round tri
 
 ## Architecture
 
-Full protocol spec (message shapes, field meanings, command codes) is in `thor-hud-handoff.md` §2 — don't re-derive it from source when the doc already has it verified. In short: the mod broadcasts a full HUD snapshot (health/food/xp/armor/hotbar) every client tick (~20/sec, unthrottled) over `127.0.0.1:48291`, newline-delimited JSON. It replies to `ICON:<itemId>` requests with a base64 PNG, and accepts single-tick simulated key/hotbar-press commands as plain text lines.
+Full protocol spec (message shapes, field meanings, command codes) is in `thor-hud-handoff.md` §2. In short: the mod broadcasts a full HUD snapshot when it changes over `127.0.0.1:48291`, newline-delimited JSON, and replays the latest snapshot to new connections. It replies to `ICON:<itemId>` requests with a base64 PNG, and accepts single-tick simulated key/hotbar-press commands as plain text lines.
 
 **Why a socket, not shared memory:** the mod and the companion app run in separate Android app sandboxes (different processes/UIDs) despite being on the same device, so loopback TCP is the simplest channel available.
 
 ### Key classes (`src/client/java/com/exojosh/client/`)
+
+The detailed rationale below originated before the 26.2 port and may retain
+historical Yarn names. The current source uses official 26.2 names such as
+`Minecraft`, `KeyMapping`, `AbstractContainerMenu`, and `containerMenu`.
 
 - `GameHudVisibility` — decides per element whether the *game* draws its own HUD. **This is why the mod no longer calls `HudElementRegistry.removeElement()`:** removal is a one-way door, since the vanilla element's renderer belongs to vanilla and nothing is kept that could put it back. `replaceElement()` hands over the original and takes a wrapper that decides per frame whether to delegate; with nothing shown, that's behaviourally identical to the old removals. The companion app drives it — an element switched off on the second screen is handed back to the top screen, so between the two displays the HUD is drawn exactly once. Wire format is `HUD:<key>,<key>,…`, the **full set every time**, re-sent on every toggle and reconnect: a dropped or reordered delta would leave the two screens disagreeing about who owns an element, which shows up as one drawn twice or not at all. Keys must match `HudElement.key` in the app's `settings/HudSettings.kt`; `offhand` deliberately has no entry here, because vanilla draws the off-hand box as part of the hotbar.
 - `ThorHudClient` — `ClientModInitializer`; installs `GameHudVisibility`'s wrappers, starts `HudStateServer`, and on each `ClientTickEvents.END_CLIENT_TICK` builds/broadcasts a `HudState` and drains inbound commands (routing `ICON:`-prefixed ones separately from action commands). `pushBundleToNewClients()` sends each new connection the texture bundle then the key bindings; both have to run on the client thread (resource manager, `GameOptions`/language files), which is why they're here and not on the accept thread.
@@ -66,13 +70,31 @@ Note every element the second screen draws must have a `GameHudVisibility.Elemen
   - **Codes name actions, not keys** — `SWAP`, not `F`. They used to name keys and got it wrong (`R` bound to swap-hands, i.e. vanilla's F; `G` to drop, i.e. Q), and the app rendered the raw code as its button label, so the grid showed an R button doing an F key's job. Naming keys is a dead end regardless: attack and use are mouse buttons with no letter to borrow, and a player rebinding in-game invalidates the whole table at once. The old single letters (`E`/`R`/`G`/`H`/`K`/`F`) are kept as aliases with the behaviour they actually had, so an app built before the rename still works; delete them once both halves are known updated.
   - Vanilla only calls `handleInputEvents()` when `currentScreen == null && overlay == null`, so commands are **dropped** while a screen is open. Letting them queue instead would stack unconsumed presses that all fire at once when the inventory closes. **`CHAT:` deliberately doesn't come through here** — it's handled in `ThorHudClient`'s command loop beside `ICON:`/`ASSETS`/`HUD:`, because it's a packet rather than a `KeyBinding` press, so the screen-open guard's reasoning doesn't apply and a player with their inventory open should still be able to answer someone.
   - Timing: Fabric's `END_CLIENT_TICK` runs *after* that tick's `handleInputEvents()`, so a dispatched command is picked up on the next tick (~50ms). `tick()` must run before `dispatch()` each tick, which places the release after the game has read the flag.
-- `ItemIconRenderer` — **the primary icon path.** Renders an item/block offscreen through the real vanilla model pipeline and reads it back as PNG bytes, so icons are isometric (vanilla's GUI display transform), use correct per-face textures, and work for composited/tinted/3D-modelled items. See "Offscreen icon rendering" below for how and why. **The glint is deliberately not rendered** — `flushItemCommands` passes `ItemRenderState.Glint.NONE` rather than `command.glintType()`. Passing the real type was a bug: an enchanted golden apple came back as a flat square of glint texture with no apple in it, because `ItemRenderer.renderItem` answers a glint by unioning the item's layer with `RenderLayers.glint()` — the same quads drawn twice, the second through an additive pipeline whose UVs come from a texture matrix vanilla rebuilds per frame from the wall clock. Offscreen, outside vanilla's frame setup, that pass covers the item instead of shimmering over it. It would be the wrong answer even if it composited: an icon is a still PNG, so the shimmer would be frozen. The app draws it instead (`ui/ItemGlint.kt`), animated and masked to the item's alpha, from the `enchanted_glint_item` asset and the `hasGlint` flag the snapshot already carries.
-- `ItemIconResolver` — legacy fallback only, used when `ItemIconRenderer` produces nothing. Resolves an item's raw texture PNG via `MinecraftClient`'s resource manager, with an `item/` → `block/` texture-path fallback. Structurally can't handle items whose icon isn't a single same-named texture file (`jungle_stairs` → `jungle_planks`, `stripped_birch_wood` → `stripped_birch_log`, multi-face logs, etc.), which is exactly what it used to render blank.
-- `NativeImageInvoker` (in `com.exojosh.client.mixin`) — `@Invoker` exposing `NativeImage`'s private `write(WritableByteChannel)` so icons can be PNG-encoded in memory instead of via a temp file. Registered in `aynthor_secondscreen_v1_21.client.mixins.json`.
+- `ItemIconRenderer` — the 26.2 compatibility adapter. It preserves the
+  callback and socket contract while delegating to `ItemIconResolver`; it does
+  not currently invoke a vanilla 3D item-model renderer.
+- `ItemIconResolver` — resolves the active raw texture PNG through
+  `Minecraft`'s resource manager, trying `textures/item/<id>.png` and then
+  `textures/block/<id>.png`. This supports simple item/block icons but not
+  composed, tinted, or model-derived icons.
+- `NativeImageInvoker` (in `com.exojosh.client.mixin`) — the remaining map
+  PNG encoder. It exposes `NativeImage`'s private `writeToChannel` method for
+  in-memory map readback; it is no longer used by item-icon rendering.
 
-### Offscreen icon rendering
+### Item icon compatibility in 26.2
 
-Verified against decompiled 1.21.11 (`./gradlew genClientOnlySources`), not recollection. **An earlier note here claimed this was impossible — that was wrong, and the reasoning is worth recording so it isn't re-derived.**
+The current 26.2 implementation keeps the callback and socket contract but
+delegates icon delivery to `ItemIconResolver`, which reads the active
+resource-pack texture through Minecraft's resource manager. The pre-26.2
+offscreen command-queue implementation is no longer compiled because 26.2
+moved GUI rendering to extracted render state and feature dispatch. This means
+simple item/block textures work, while composed, tinted, and 3D model icons are
+an explicit follow-up task.
+
+### Historical pre-26.2 offscreen icon rendering
+
+This section documents the removed 1.21.11 implementation only; it is not part
+of the current 26.2 build.
 
 The dead end is real but narrower than it looked: `DrawContext.drawItem()` only records into a `GuiRenderState`, and `GuiRenderer.render()`'s flush is indeed hardwired to `MinecraftClient.getFramebuffer()`. What that analysis missed is that the *draw* path underneath is redirectable. `RenderLayer.draw(BuiltBuffer)` reads two public static fields — `RenderSystem.outputColorTextureOverride` / `outputDepthTextureOverride` — and targets those instead of the layer's own framebuffer when set. `WorldRenderer` uses this, and so does `GuiRenderer.prepareItemElements()`, which renders every GUI item into a private "UI items atlas" texture *before* compositing. So vanilla itself already renders items fully offscreen; `ItemIconRenderer` is that same sequence pointed at our own 64×64 texture:
 
@@ -87,11 +109,18 @@ Constraints worth knowing before editing this: must run on the render thread wit
 
 ### Icon request reliability
 
-Icon requests are queued (`MAX_ICON_RENDERS_PER_TICK`) rather than rendered inline, and **every request gets an answer**: a rendered icon, a fallback raw texture, or an explicit failure message (`broadcastIconFailure`, which sends `{"type":"icon","itemId":...}` with no `data` field). Silently dropping unresolvable requests was half the cause of icons appearing inconsistently — the companion app's other half is described in its own CLAUDE.md.
+Icon requests are queued (`MAX_ICON_RENDERS_PER_TICK`) rather than handled inline, and **every valid request gets an answer**: a raw active-pack texture or an explicit failure message (`broadcastIconFailure`, which sends `{"type":"icon","itemId":...}` with no `data` field). Silently dropping unresolvable requests was half the cause of icons appearing inconsistently — the companion app's other half is described in its own CLAUDE.md.
 
 The main (non-client) source set (`src/main/java/com/exojosh/`) is untouched Fabric-template boilerplate and not part of the HUD feature.
 
-## Known unverified/fragile areas (per the handoff doc)
+## Known limitations / validation boundaries
 
-- A number of Yarn-mapping API calls (`player.getArmor()`, `getInventory().getSelectedSlot()`, `ItemStack.hasGlint()`, etc.) were written from best recollection during development and individually compile-checked, but not confirmed together in one clean build.
-- Package name is settled at `com.exojosh` (main) / `com.exojosh.client` (client), not still in flux as the handoff doc's §3 warns.
+- The compatibility icon path serves the active raw item/block texture. It does
+  not yet reproduce vanilla's composed, tinted, or 3D item-model rendering.
+- A local 26.2 development client reached the render thread, loaded the mod,
+  bound the socket, and returned the hello frame. Authenticated-world,
+  companion-app, and on-device AYN Thor validation still need the relevant
+  account and hardware.
+- The package name is settled at `com.exojosh` (main) / `com.exojosh.client`
+  (client), and the mod id remains `aynthor_secondscreen_v1_21` for companion
+  compatibility.
