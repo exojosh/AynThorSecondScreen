@@ -22,11 +22,15 @@ public class ThorHudForgeClient {
     private static final String BINDING_REQUEST = "BINDINGS";
     private static final String HUD_VISIBILITY_PREFIX = "HUD:";
     private static final String CHAT_PREFIX = "CHAT:";
+    private static final String CLOSE_CONTAINER_COMMAND = "CLOSE_CONTAINER";
+    private static final String SUPPRESS_CONTAINER_PREFIX = "SUPPRESS_CONTAINER:";
     private static final int MAX_ICON_RENDERS_PER_TICK = 2;
+    private static final int MAP_UPDATE_INTERVAL_TICKS = 10;
 
     private static boolean hadPlayer = false;
     private static boolean warnedAboutBindFailure = false;
     private static HudState lastHudState = null;
+    private static int ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
 
     public static final HudStateServer HUD_SERVER = new HudStateServer(48291);
     private static final Queue<String> iconRequestQueue = new ArrayDeque<>();
@@ -88,6 +92,15 @@ public class ThorHudForgeClient {
                 ChatRelayForge.send(client, incoming.substring(CHAT_PREFIX.length()));
             } else if (incoming.startsWith(ContainerRelayForge.CLICK_PREFIX)) {
                 ContainerRelayForge.click(client, incoming.substring(ContainerRelayForge.CLICK_PREFIX.length()));
+            } else if (incoming.equals(CLOSE_CONTAINER_COMMAND)) {
+                client.execute(() -> {
+                    if (client.player != null) {
+                        client.player.closeContainer();
+                    }
+                });
+            } else if (incoming.startsWith(SUPPRESS_CONTAINER_PREFIX)) {
+                ContainerRelayForge.setSuppressRendering(
+                        Boolean.parseBoolean(incoming.substring(SUPPRESS_CONTAINER_PREFIX.length()).trim()));
             } else {
                 CommandDispatcherForge.dispatch(incoming);
             }
@@ -95,10 +108,23 @@ public class ThorHudForgeClient {
 
         pushBundleToNewClients();
         drainIconQueue();
+        maybeBroadcastMap(client);
 
         if (HUD_SERVER.hasClients()) {
             ContainerRelayForge.broadcastIfChanged(client, HUD_SERVER);
         }
+    }
+
+    private static void maybeBroadcastMap(Minecraft client) {
+        if (!HUD_SERVER.hasClients()) {
+            ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
+            return;
+        }
+
+        if (++ticksSinceMapUpdate < MAP_UPDATE_INTERVAL_TICKS) return;
+        ticksSinceMapUpdate = 0;
+
+        MapRendererForge.render(client).ifPresent(HUD_SERVER::broadcastMap);
     }
 
     private static void broadcastHudStateIfChanged(HudState state) {
@@ -129,6 +155,7 @@ public class ThorHudForgeClient {
         ChatRelayForge.clearHistory();
         lastHudState = null;
         ContainerRelayForge.invalidate();
+        ticksSinceMapUpdate = MAP_UPDATE_INTERVAL_TICKS;
 
         HUD_SERVER.broadcastNoPlayer();
         System.out.println("[ThorHud] Player left world -- notified second screen");
