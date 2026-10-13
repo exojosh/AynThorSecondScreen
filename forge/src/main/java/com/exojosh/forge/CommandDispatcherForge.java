@@ -25,20 +25,36 @@ public class CommandDispatcherForge {
         Options options = client.options;
 
         COMMANDS.put("INVENTORY", options.keyInventory);
+        COMMANDS.put("E", options.keyInventory);
         COMMANDS.put("DROP", options.keyDrop);
+        COMMANDS.put("Q", options.keyDrop);
+        COMMANDS.put("G", options.keyDrop);
         COMMANDS.put("SWAP", options.keySwapOffhand);
+        COMMANDS.put("F", options.keySwapOffhand);
+        COMMANDS.put("R", options.keySwapOffhand);
+        COMMANDS.put("CHAT", options.keyChat);
+        COMMANDS.put("T", options.keyChat);
         COMMANDS.put("USE", options.keyUse);
+        COMMANDS.put("H", options.keyUse);
         COMMANDS.put("ATTACK", options.keyAttack);
+        COMMANDS.put("K", options.keyAttack);
         COMMANDS.put("JUMP", options.keyJump);
         COMMANDS.put("SNEAK", options.keyShift);
+        COMMANDS.put("SPRINT", options.keySprint);
+        COMMANDS.put("TAB", options.keyPlayerList);
+        COMMANDS.put("PLAYER_LIST", options.keyPlayerList);
 
-        // Aliases for backward compatibility
-        COMMANDS.put("E", options.keyInventory);
-        COMMANDS.put("R", options.keySwapOffhand);
-        COMMANDS.put("G", options.keyDrop);
-        COMMANDS.put("H", options.keyUse);
-        COMMANDS.put("K", options.keyAttack);
-        COMMANDS.put("F", options.keySwapOffhand);
+        if (options.keyMappings != null) {
+            for (KeyMapping k : options.keyMappings) {
+                if (k != null && k.getName() != null) {
+                    String name = k.getName().toLowerCase();
+                    if (name.contains("map") || name.contains("minimap")) {
+                        COMMANDS.putIfAbsent("MAP", k);
+                        COMMANDS.putIfAbsent("M", k);
+                    }
+                }
+            }
+        }
 
         initialized = true;
     }
@@ -56,7 +72,39 @@ public class CommandDispatcherForge {
         Minecraft client = Minecraft.getInstance();
 
         if (client.screen != null) {
+            if ("INVENTORY".equals(code) || "E".equals(code) || "ESCAPE".equals(code) || "PAUSE".equals(code) || "CLOSE".equals(code)) {
+                client.execute(() -> {
+                    if (client.player != null) {
+                        client.player.closeContainer();
+                    }
+                    client.setScreen(null);
+                });
+                return;
+            }
             System.out.println("[ThorHud] Ignoring command '" + code + "' -- a screen is open");
+            return;
+        }
+
+        if ("ESCAPE".equals(code) || "PAUSE".equals(code)) {
+            client.execute(() -> client.pauseGame(false));
+            return;
+        }
+
+        if ("F3".equals(code) || "DEBUG".equals(code)) {
+            client.execute(() -> {
+                if (client.options != null) {
+                    client.options.renderDebug = !client.options.renderDebug;
+                }
+            });
+            return;
+        }
+
+        if ("F5".equals(code) || "PERSPECTIVE".equals(code)) {
+            client.execute(() -> {
+                if (client.options != null) {
+                    client.options.setCameraType(client.options.getCameraType().cycle());
+                }
+            });
             return;
         }
 
