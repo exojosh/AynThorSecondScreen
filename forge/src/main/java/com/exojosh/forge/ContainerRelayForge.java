@@ -1,6 +1,9 @@
 package com.exojosh.forge;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
@@ -9,8 +12,6 @@ import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -23,6 +24,7 @@ import java.util.List;
 public final class ContainerRelayForge {
 
     public static final String CLICK_PREFIX = "SLOT:";
+    public static final String WIDGET_CLICK_PREFIX = "WIDGET:";
     private static final int OUTSIDE_SLOT = -999;
     private static volatile boolean suppressRendering = true;
     private static ScreenHandlerState lastSent;
@@ -35,6 +37,17 @@ public final class ContainerRelayForge {
             int y
     ) {}
 
+    public record WidgetState(
+            int id,
+            String label,
+            String className,
+            int x,
+            int y,
+            int width,
+            int height,
+            boolean active
+    ) {}
+
     public record ScreenHandlerState(
             String type,
             int syncId,
@@ -43,6 +56,7 @@ public final class ContainerRelayForge {
             boolean isScreenOpen,
             HudState.HotbarSlot cursor,
             List<SlotState> slots,
+            List<WidgetState> widgets,
             int playerStart,
             int hotbarStart,
             int armorStart,
@@ -105,6 +119,27 @@ public final class ContainerRelayForge {
         boolean isScreenOpen = client.screen instanceof AbstractContainerScreen<?>;
         String title = client.screen != null ? client.screen.getTitle().getString() : null;
 
+        List<WidgetState> widgets = new ArrayList<>();
+        if (client.screen != null) {
+            int widgetId = 0;
+            for (var child : client.screen.children()) {
+                if (child instanceof AbstractWidget widget && widget.visible) {
+                    String label = widget.getMessage() != null ? widget.getMessage().getString() : "";
+                    String className = widget.getClass().getSimpleName();
+                    widgets.add(new WidgetState(
+                            widgetId++,
+                            label,
+                            className,
+                            widget.getX(),
+                            widget.getY(),
+                            widget.getWidth(),
+                            widget.getHeight(),
+                            widget.active
+                    ));
+                }
+            }
+        }
+
         return new ScreenHandlerState(
                 "container",
                 handler.containerId,
@@ -113,6 +148,7 @@ public final class ContainerRelayForge {
                 isScreenOpen,
                 HudState.slotFrom(cursor),
                 slots,
+                widgets,
                 isPlayerInventory ? 9 : Math.max(0, size - 36),
                 isPlayerInventory ? 36 : Math.max(0, size - 9),
                 isPlayerInventory ? 5 : -1,
@@ -169,5 +205,56 @@ public final class ContainerRelayForge {
 
         client.gameMode.handleInventoryMouseClick(handler.containerId, slotId, button, action, player);
         lastSent = null;
+    }
+
+    public static void clickWidget(Minecraft client, int widgetId) {
+        if (client.screen == null) return;
+        client.execute(() -> {
+            int cur = 0;
+            for (var child : client.screen.children()) {
+                if (child instanceof AbstractWidget widget && widget.visible) {
+                    if (cur == widgetId) {
+                        if (widget.active) {
+                            widget.playDownSound(client.getSoundManager());
+                            if (widget instanceof Button btn) {
+                                btn.onPress();
+                            } else {
+                                widget.onClick(widget.getX() + widget.getWidth() / 2.0, widget.getY() + widget.getHeight() / 2.0);
+                            }
+                        }
+                        return;
+                    }
+                    cur++;
+                }
+            }
+        });
+    }
+
+    public static void clickScreen(Minecraft client, double x, double y) {
+        if (client.screen == null) return;
+        client.execute(() -> {
+            client.screen.mouseClicked(x, y, 0);
+        });
+    }
+
+    public static void sortInventory(Minecraft client) {
+        if (client.screen == null) return;
+        client.execute(() -> {
+            for (var child : client.screen.children()) {
+                if (child instanceof AbstractWidget widget && widget.visible && widget.active) {
+                    String name = widget.getClass().getSimpleName().toLowerCase();
+                    String label = widget.getMessage() != null ? widget.getMessage().getString().toLowerCase() : "";
+                    if (name.contains("sort") || label.contains("sort") || name.contains("miniinventorybutton")) {
+                        widget.playDownSound(client.getSoundManager());
+                        if (widget instanceof Button btn) {
+                            btn.onPress();
+                        } else {
+                            widget.onClick(widget.getX() + widget.getWidth() / 2.0, widget.getY() + widget.getHeight() / 2.0);
+                        }
+                        return;
+                    }
+                }
+            }
+        });
     }
 }

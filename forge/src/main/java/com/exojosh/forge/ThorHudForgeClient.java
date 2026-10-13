@@ -92,10 +92,29 @@ public class ThorHudForgeClient {
                 ChatRelayForge.send(client, incoming.substring(CHAT_PREFIX.length()));
             } else if (incoming.startsWith(ContainerRelayForge.CLICK_PREFIX)) {
                 ContainerRelayForge.click(client, incoming.substring(ContainerRelayForge.CLICK_PREFIX.length()));
+            } else if (incoming.startsWith(ContainerRelayForge.WIDGET_CLICK_PREFIX)) {
+                try {
+                    int widgetId = Integer.parseInt(incoming.substring(ContainerRelayForge.WIDGET_CLICK_PREFIX.length()).trim());
+                    ContainerRelayForge.clickWidget(client, widgetId);
+                } catch (NumberFormatException ignored) {}
+            } else if (incoming.equals("SORT")) {
+                ContainerRelayForge.sortInventory(client);
+            } else if (incoming.startsWith("SCREEN_CLICK:")) {
+                try {
+                    String[] coords = incoming.substring("SCREEN_CLICK:".length()).trim().split(",");
+                    if (coords.length == 2) {
+                        double cx = Double.parseDouble(coords[0].trim());
+                        double cy = Double.parseDouble(coords[1].trim());
+                        ContainerRelayForge.clickScreen(client, cx, cy);
+                    }
+                } catch (NumberFormatException ignored) {}
             } else if (incoming.equals(CLOSE_CONTAINER_COMMAND)) {
                 client.execute(() -> {
                     if (client.player != null) {
                         client.player.closeContainer();
+                    }
+                    if (client.screen != null) {
+                        client.setScreen(null);
                     }
                 });
             } else if (incoming.startsWith(SUPPRESS_CONTAINER_PREFIX)) {
