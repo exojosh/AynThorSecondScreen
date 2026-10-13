@@ -1,0 +1,85 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.+', changing: true
+    }
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'eclipse'
+apply plugin: 'maven-publish'
+
+version = project.mod_version
+group = 'com.exojosh'
+archivesBaseName = 'aynthor_secondscreen-forge-1.20.1'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: project.minecraft_version
+    copyIdeResources = true
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                aynthor_secondscreen {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version      : project.minecraft_version,
+            minecraft_version_range: '[1.20.1,1.21)',
+            forge_version          : project.forge_version,
+            forge_version_range    : '[47,)',
+            loader_version_range   : '[47,)',
+            mod_id                 : 'aynthor_secondscreen',
+            mod_name               : 'AYN Thor Second Screen',
+            mod_license            : 'CC0-1.0',
+            mod_version            : version,
+            mod_authors            : 'exojosh, venatrix-ritz',
+            mod_description        : 'Second Screen Helper Mod for Minecraft that moves HUD content to the bottom screen of the AYN Thor.'
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'     : 'aynthor_secondscreen',
+                'Specification-Vendor'    : 'exojosh',
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : 'exojosh',
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
