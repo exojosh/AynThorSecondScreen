@@ -10,14 +10,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Plain data snapshot of the HUD elements for Forge 1.20.1.
+ * Plain data snapshot of the HUD elements for Forge 1.20.1,
+ * including Vanilla, AppleSkin, ArmorPoints++, Inventory HUD+,
+ * TACZ Gun mod, Legendary Survival Overhaul, and ParCool.
  */
 public record HudState(
         float health,
         float maxHealth,
         float absorption,
         int armor,
+        float armorToughness,
         int food,
+        float saturation,
+        float exhaustion,
         int xpLevel,
         float xpProgress,
         int selectedSlot,
@@ -27,7 +32,12 @@ public record HudState(
         String heartType,
         boolean hardcore,
         List<HotbarSlot> hotbar,
-        HotbarSlot offhand
+        HotbarSlot offhand,
+        List<ModHudCompat.ArmorHud> armorSlots,
+        List<ModHudCompat.EffectHud> effects,
+        ModHudCompat.GunHud gun,
+        ModHudCompat.SurvivalHud survival,
+        ModHudCompat.TargetHud target
 ) {
     public record HotbarSlot(
             String itemId,

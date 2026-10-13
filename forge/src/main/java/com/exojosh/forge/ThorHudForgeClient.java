@@ -57,12 +57,19 @@ public class ThorHudForgeClient {
         hadPlayer = true;
         warnAboutBindFailureOnce(client);
 
+        float toughness = (float) player.getAttributeValue(net.minecraft.world.entity.ai.attributes.Attributes.ARMOR_TOUGHNESS);
+        float saturation = player.getFoodData().getSaturationLevel();
+        float exhaustion = player.getFoodData().getExhaustionLevel();
+
         HudState state = new HudState(
                 player.getHealth(),
                 player.getMaxHealth(),
                 player.getAbsorptionAmount(),
                 player.getArmorValue(),
+                toughness,
                 player.getFoodData().getFoodLevel(),
+                saturation,
+                exhaustion,
                 player.experienceLevel,
                 player.experienceProgress,
                 player.getInventory().selected,
@@ -72,7 +79,12 @@ public class ThorHudForgeClient {
                 HudState.heartTypeOf(player),
                 HudState.isHardcore(player),
                 HudState.hotbarFromInventory(player),
-                HudState.offhandFrom(player)
+                HudState.offhandFrom(player),
+                ModHudCompat.getArmorSlots(player),
+                ModHudCompat.getActiveEffects(player),
+                ModHudCompat.getGunHud(player),
+                ModHudCompat.getSurvivalHud(player),
+                ModHudCompat.getTargetHud(client)
         );
 
         broadcastHudStateIfChanged(state);
