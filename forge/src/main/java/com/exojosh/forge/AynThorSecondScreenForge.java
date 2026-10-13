@@ -18,6 +18,7 @@ public class AynThorSecondScreenForge {
             MinecraftForge.EVENT_BUS.register(ThorHudForgeClient.class);
             MinecraftForge.EVENT_BUS.register(GameHudVisibilityForge.class);
             MinecraftForge.EVENT_BUS.register(ChatRelayForge.class);
+            MinecraftForge.EVENT_BUS.register(ContainerRelayForge.class);
             ThorHudForgeClient.init();
         });
     }

@@ -118,9 +118,26 @@ public class HudStateServer {
         sendTo(client, gson.toJson(state));
     }
 
-    public void broadcastMap(int originX, int originZ, int scale, String base64Rgba) {
-        record MapResponse(String type, int originX, int originZ, int scale, String data) {}
-        broadcastRaw(gson.toJson(new MapResponse("map", originX, originZ, scale, base64Rgba)));
+    public void broadcastMap(MapRendererForge.Tile tile) {
+        record MapResponse(
+                String type,
+                String data,
+                int originX,
+                int originZ,
+                double playerX,
+                double playerZ,
+                float yaw,
+                int size
+        ) {}
+        broadcastRaw(gson.toJson(new MapResponse(
+                "map",
+                tile.base64Png(),
+                tile.originX(),
+                tile.originZ(),
+                tile.playerX(),
+                tile.playerZ(),
+                tile.yaw(),
+                tile.size())));
     }
 
     private void acceptLoop() {
