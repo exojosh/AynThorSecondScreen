@@ -1,14 +1,13 @@
 package com.exojosh.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.Identifier;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
 
 /**
  * The set of textures the companion app needs to draw the HUD, resolved out
@@ -133,14 +132,14 @@ public final class HudAssetCatalog {
         if (path == null) return Optional.empty();
 
         try {
-            Identifier texture = Identifier.ofVanilla(path);
-            var resourceOpt = MinecraftClient.getInstance().getResourceManager().getResource(texture);
+            Identifier texture = Identifier.withDefaultNamespace(path);
+            var resourceOpt = Minecraft.getInstance().getResourceManager().getResource(texture);
             if (resourceOpt.isEmpty()) {
                 System.out.println("[ThorHud] No resource for HUD asset " + key + " (" + path + ")");
                 return Optional.empty();
             }
 
-            try (InputStream in = resourceOpt.get().getInputStream()) {
+            try (InputStream in = resourceOpt.get().open()) {
                 return Optional.of(Base64.getEncoder().encodeToString(in.readAllBytes()));
             }
         } catch (IOException | RuntimeException e) {

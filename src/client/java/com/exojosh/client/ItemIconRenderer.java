@@ -1,35 +1,37 @@
 package com.exojosh.client;
 
 import com.exojosh.client.mixin.NativeImageInvoker;
-import com.mojang.blaze3d.buffers.GpuBuffer;
-import com.mojang.blaze3d.systems.CommandEncoder;
-import com.mojang.blaze3d.systems.GpuDevice;
-import com.mojang.blaze3d.systems.ProjectionType;
+import com.mojang.blaze3d.ProjectionType;
+import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.blaze3d.textures.GpuTexture;
-import com.mojang.blaze3d.textures.GpuTextureView;
-import com.mojang.blaze3d.textures.TextureFormat;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.DiffuseLighting;
-import net.minecraft.client.render.OverlayTexture;
-import net.minecraft.client.render.ProjectionMatrix2;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.command.BatchingRenderCommandQueue;
-import net.minecraft.client.render.command.OrderedRenderCommandQueueImpl;
-import net.minecraft.client.render.item.ItemRenderState;
-import net.minecraft.client.render.item.ItemRenderer;
-import net.minecraft.client.texture.NativeImage;
-import net.minecraft.client.util.BufferAllocator;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.item.ItemDisplayContext;
-import net.minecraft.item.ItemStack;
-import org.joml.Matrix4fStack;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.renderpearl.api.GpuFormat;
+import com.mojang.renderpearl.api.buffers.GpuBuffer;
+import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
+import com.mojang.renderpearl.api.commands.RenderPass;
+import com.mojang.renderpearl.api.device.GpuDevice;
+import com.mojang.renderpearl.api.textures.GpuTexture;
+import com.mojang.renderpearl.api.textures.GpuTextureView;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.util.Base64;
+import java.util.Optional;
+import java.util.OptionalDouble;
 import java.util.function.Consumer;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.Projection;
+import net.minecraft.client.renderer.ProjectionMatrixBuffer;
+import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.feature.FeatureRenderDispatcher;
+import net.minecraft.client.renderer.item.ItemStackRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
+import org.joml.Vector4f;
 
 /**
  * Renders an item/block into a private offscreen GPU texture using the real
@@ -93,27 +95,32 @@ public final class ItemIconRenderer {
     /** Vanilla's full-brightness packed lightmap value for GUI items. */
     private static final int FULL_BRIGHT = 15728880;
 
-    /** COPY_SRC (readback) | TEXTURE_BINDING | RENDER_ATTACHMENT. */
-    private static final int COLOR_USAGE =
-            GpuTexture.USAGE_COPY_SRC | GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT;
+    /**
+     * COPY_SRC (readback) | COPY_DST (26.x requires it for the clear) |
+     * TEXTURE_BINDING | RENDER_ATTACHMENT. Vanilla's GuiItemAtlas uses the same
+     * set minus COPY_SRC, since it never reads its atlas back.
+     */
+    private static final int COLOR_USAGE = GpuTexture.USAGE_COPY_SRC | GpuTexture.USAGE_COPY_DST
+            | GpuTexture.USAGE_TEXTURE_BINDING | GpuTexture.USAGE_RENDER_ATTACHMENT;
 
-    /** Depth only ever gets rendered into, never read back or sampled. */
-    private static final int DEPTH_USAGE = GpuTexture.USAGE_RENDER_ATTACHMENT;
+    /** Same as vanilla's GuiItemAtlas depth texture (RENDER_ATTACHMENT | COPY_DST). */
+    private static final int DEPTH_USAGE = GpuTexture.USAGE_RENDER_ATTACHMENT | GpuTexture.USAGE_COPY_DST;
 
-    /** Matches ScreenshotRecorder's readback buffer usage (MAP_READ | COPY_DST). */
+    /** Matches Screenshot's readback buffer usage (MAP_READ | COPY_DST). */
     private static final int READBACK_BUFFER_USAGE = 9;
 
+    private static final Vector4f TRANSPARENT = new Vector4f(0.0F);
+
     // Reused across icons -- these are GPU allocations, we don't want one per
-    // request. Safe to reuse even with async readback in flight: GL orders
-    // copyTextureToBuffer against the draws that preceded it, so a later
-    // icon's draws can't corrupt an earlier icon's already-issued read.
+    // request. Safe to reuse even with async readback in flight: the GPU orders
+    // copyTextureToBuffer against the draws that preceded it.
     private static GpuTexture colorTexture;
     private static GpuTextureView colorView;
     private static GpuTexture depthTexture;
     private static GpuTextureView depthView;
-    private static ProjectionMatrix2 projection;
-    private static BufferAllocator bufferAllocator;
-    private static VertexConsumerProvider.Immediate vertexConsumers;
+    private static final Projection projection = new Projection();
+    private static ProjectionMatrixBuffer projectionBuffer;
+    private static final SubmitNodeStorage submitNodes = new SubmitNodeStorage();
 
     private ItemIconRenderer() {
     }
@@ -128,11 +135,18 @@ public final class ItemIconRenderer {
      *                   request either way rather than silently dropping it.
      */
     public static void renderBase64Png(ItemStack stack, Consumer<String> onComplete) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
 
-        ItemRenderState renderState = new ItemRenderState();
-        client.getItemModelManager().clearAndUpdate(
-                renderState, stack, ItemDisplayContext.GUI, client.world, client.player, 0);
+        // The glint is deliberately dropped (see CLAUDE.md): the app animates
+        // it itself from the snapshot's hasGlint flag. In 26.x the glint is
+        // drawn by the shared feature dispatcher, so rather than filtering it
+        // out of the draw we render a copy that has none.
+        ItemStack plain = stack.copy();
+        plain.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
+
+        ItemStackRenderState renderState = new ItemStackRenderState();
+        client.getItemModelResolver().updateForTopItem(
+                renderState, plain, ItemDisplayContext.GUI, client.level, client.player, 0);
 
         if (renderState.isEmpty()) {
             onComplete.accept(null);
@@ -154,130 +168,70 @@ public final class ItemIconRenderer {
         if (colorTexture != null) return;
 
         GpuDevice device = RenderSystem.getDevice();
-        colorTexture = device.createTexture("ThorHud icon", COLOR_USAGE, TextureFormat.RGBA8, ICON_SIZE, ICON_SIZE, 1, 1);
+        colorTexture = device.createTexture("ThorHud icon", COLOR_USAGE, GpuFormat.RGBA8_UNORM, ICON_SIZE, ICON_SIZE, 1, 1);
         colorView = device.createTextureView(colorTexture);
-        depthTexture = device.createTexture("ThorHud icon depth", DEPTH_USAGE, TextureFormat.DEPTH32, ICON_SIZE, ICON_SIZE, 1, 1);
+        depthTexture = device.createTexture("ThorHud icon depth", DEPTH_USAGE, GpuFormat.D32_FLOAT, ICON_SIZE, ICON_SIZE, 1, 1);
         depthView = device.createTextureView(depthTexture);
-
-        // Same near/far as GuiRenderer's "items" projection.
-        projection = new ProjectionMatrix2("thorhud-icon", -1000.0F, 1000.0F, true);
-
-        // Same size GuiRenderer gives its own item pass; the allocator would
-        // grow on demand anyway, this just avoids reallocating on first use.
-        bufferAllocator = new BufferAllocator(786432);
-        vertexConsumers = VertexConsumerProvider.immediate(bufferAllocator);
+        projectionBuffer = new ProjectionMatrixBuffer("thorhud-icon");
     }
 
-    private static void drawToOffscreenTexture(ItemRenderState renderState) {
-        MinecraftClient client = MinecraftClient.getInstance();
+    /**
+     * The same sequence vanilla's GuiItemAtlas.drawToSlot uses in 26.3, pointed
+     * at our own 64x64 texture: submit the item into a node storage, let the
+     * game's FeatureRenderDispatcher turn that into draws, and run them in a
+     * render pass whose attachments are our textures. Nothing touches the
+     * window framebuffer.
+     */
+    private static void drawToOffscreenTexture(ItemStackRenderState renderState) {
+        Minecraft client = Minecraft.getInstance();
         GpuDevice device = RenderSystem.getDevice();
 
-        // Transparent background + cleared depth, otherwise we'd composite
-        // onto whatever the previous icon left behind.
-        device.createCommandEncoder().clearColorAndDepthTextures(colorTexture, 0, depthTexture, 1.0);
+        // Transparent background + cleared depth (26.x uses reversed depth,
+        // so "far" is 0.0, matching GuiItemAtlas).
+        device.createCommandEncoder().clearColorAndDepthTextures(colorTexture, TRANSPARENT, depthTexture, 0.0);
 
         RenderSystem.backupProjectionMatrix();
-        GpuTextureView previousColor = RenderSystem.outputColorTextureOverride;
-        GpuTextureView previousDepth = RenderSystem.outputDepthTextureOverride;
-
-        Matrix4fStack modelView = RenderSystem.getModelViewStack();
-        modelView.pushMatrix();
-
         try {
-            RenderSystem.outputColorTextureOverride = colorView;
-            RenderSystem.outputDepthTextureOverride = depthView;
-            RenderSystem.setProjectionMatrix(projection.set(ICON_SIZE, ICON_SIZE), ProjectionType.ORTHOGRAPHIC);
-            modelView.identity();
+            projection.setupOrtho(-1000.0F, 1000.0F, ICON_SIZE, ICON_SIZE, true);
+            RenderSystem.setProjectionMatrix(projectionBuffer.getBuffer(projection), ProjectionType.ORTHOGRAPHIC);
 
             // Flat-shade sprite-style items, 3D-light actual block models --
-            // this is what makes a block read as isometric rather than as a
-            // uniformly-lit silhouette.
-            client.gameRenderer.getDiffuseLighting().setShaderLights(
-                    renderState.isSideLit() ? DiffuseLighting.Type.ITEMS_3D : DiffuseLighting.Type.ITEMS_FLAT);
+            // this is what makes a block read as isometric.
+            client.gameRenderer.lighting().setupFor(
+                    renderState.usesBlockLight() ? Lighting.Entry.ITEMS_3D : Lighting.Entry.ITEMS_FLAT);
 
             // Centre the item and scale the model's [-0.5, 0.5] unit cube up
             // to fill the texture. Y is negated because the ortho projection
-            // is Y-down. Mirrors GuiRenderer.prepareItemInitially.
-            MatrixStack matrices = new MatrixStack();
+            // is Y-down.
+            PoseStack matrices = new PoseStack();
             matrices.translate(ICON_SIZE / 2.0F, ICON_SIZE / 2.0F, 0.0F);
             matrices.scale(ICON_SIZE, -ICON_SIZE, ICON_SIZE);
+            renderState.submit(matrices, submitNodes, FULL_BRIGHT, OverlayTexture.NO_OVERLAY, 0);
 
-            OrderedRenderCommandQueueImpl queue = new OrderedRenderCommandQueueImpl();
-            renderState.render(matrices, queue, FULL_BRIGHT, OverlayTexture.DEFAULT_UV, 0);
-            flushItemCommands(queue);
+            FeatureRenderDispatcher dispatcher = client.gameRenderer.featureRenderDispatcher();
+            try (
+                    FeatureRenderDispatcher.PreparedFrame frame = dispatcher.prepareFrame(submitNodes);
+                    RenderPass pass = device.createCommandEncoder().createRenderPass(
+                            () -> "ThorHud item icon", colorView, Optional.empty(), depthView, OptionalDouble.empty())
+            ) {
+                RenderSystem.bindDefaultUniforms(pass);
+                FeatureRenderDispatcher.renderAllFeatures(pass, frame);
+            }
         } finally {
-            modelView.popMatrix();
-            RenderSystem.outputColorTextureOverride = previousColor;
-            RenderSystem.outputDepthTextureOverride = previousDepth;
             RenderSystem.restoreProjectionMatrix();
         }
     }
 
-    /**
-     * ItemRenderState.render() only queues commands; this turns them into
-     * actual geometry. Equivalent to vanilla's ItemCommandRenderer minus the
-     * entity-outline pass, which GUI items never use.
-     *
-     * <h2>The glint is deliberately dropped here</h2>
-     * {@code command.glintType()} is replaced with {@link ItemRenderState.Glint#NONE},
-     * so an enchanted item renders as the plain item and the companion app draws
-     * the glint over it.
-     *
-     * Passing the real glint type through was an actual bug, not a missing
-     * nicety: an enchanted golden apple came back as a flat square of the glint
-     * texture with no apple in it. {@code ItemRenderer.renderItem} answers a
-     * glint by unioning the item's own layer with {@code RenderLayers.glint()},
-     * so the same quads are drawn twice -- and that second layer is an *additive*
-     * pipeline whose UVs come from a texture matrix vanilla rebuilds per frame
-     * from the wall clock ({@code TextureTransform.GLINT_TEXTURING}). Offscreen,
-     * outside vanilla's frame setup, that pass covers the item instead of
-     * shimmering across it.
-     *
-     * Even if it composited correctly it would be the wrong answer here: the
-     * result is a still PNG, so vanilla's scrolling shimmer would be frozen.
-     * Drawing it app-side gets the animation back and masks it to the item's own
-     * alpha, which is what makes a sword glint along the blade rather than
-     * lighting up the whole square. The app needs only the {@code hasGlint} flag
-     * the snapshot already carries, plus the glint texture, which
-     * {@link HudAssetCatalog} now serves.
-     */
-    private static void flushItemCommands(OrderedRenderCommandQueueImpl queue) {
-        MatrixStack matrices = new MatrixStack();
-
-        for (BatchingRenderCommandQueue batch : queue.getBatchingQueues().values()) {
-            for (OrderedRenderCommandQueueImpl.ItemCommand command : batch.getItemCommands()) {
-                matrices.push();
-                matrices.peek().copy(command.positionMatrix());
-                ItemRenderer.renderItem(
-                        command.displayContext(),
-                        matrices,
-                        vertexConsumers,
-                        command.lightCoords(),
-                        command.overlayCoords(),
-                        command.tintLayers(),
-                        command.quads(),
-                        command.renderLayer(),
-                        ItemRenderState.Glint.NONE
-                );
-                matrices.pop();
-            }
-        }
-
-        // Draws while the output override is still pointed at our texture.
-        vertexConsumers.draw();
-    }
-
     private static void readBackAsync(Consumer<String> onComplete) {
-        int pixelSize = colorTexture.getFormat().pixelSize();
+        int pixelSize = colorTexture.getFormat().blockSize();
         long size = (long) ICON_SIZE * ICON_SIZE * pixelSize;
 
         GpuDevice device = RenderSystem.getDevice();
         GpuBuffer readback = device.createBuffer(() -> "ThorHud icon readback", READBACK_BUFFER_USAGE, size);
-        CommandEncoder encoder = device.createCommandEncoder();
 
-        encoder.copyTextureToBuffer(colorTexture, readback, 0L, () -> {
+        device.createCommandEncoder().copyTextureToBuffer(colorTexture, readback, 0L, () -> {
             String base64 = null;
-            try (GpuBuffer.MappedView mapped = encoder.mapBuffer(readback, true, false)) {
+            try (GpuBufferSlice.MappedView mapped = readback.map(true, false)) {
                 base64 = encodeBase64Png(mapped, pixelSize);
             } catch (Exception e) {
                 System.out.println("[ThorHud] Icon readback failed: " + e);
@@ -289,7 +243,7 @@ public final class ItemIconRenderer {
         }, 0);
     }
 
-    private static String encodeBase64Png(GpuBuffer.MappedView mapped, int pixelSize) throws Exception {
+    private static String encodeBase64Png(GpuBufferSlice.MappedView mapped, int pixelSize) throws Exception {
         // NativeImage's setColor takes little-endian RGBA (ABGR when read as
         // an int), which is exactly the layout an RGBA8 texture reads back
         // as -- so the ints go straight across. Row order is flipped because
@@ -299,7 +253,7 @@ public final class ItemIconRenderer {
             for (int y = 0; y < ICON_SIZE; y++) {
                 for (int x = 0; x < ICON_SIZE; x++) {
                     int abgr = mapped.data().getInt((x + y * ICON_SIZE) * pixelSize);
-                    image.setColor(x, ICON_SIZE - y - 1, abgr);
+                    image.setPixelABGR(x, ICON_SIZE - y - 1, abgr);
                 }
             }
 

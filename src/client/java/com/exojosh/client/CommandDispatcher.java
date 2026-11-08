@@ -1,12 +1,11 @@
 package com.exojosh.client;
 
 import com.exojosh.client.mixin.KeyBindingAccessor;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
 
 /**
  * Routes commands sent from the companion app to actual game actions.
@@ -66,13 +65,13 @@ public class CommandDispatcher {
     /** Presses a binding by its translation key, e.g. {@code BIND:key.drop}. */
     private static final String BINDING_PREFIX = "BIND:";
 
-    private static final Map<String, KeyBinding> COMMANDS = new HashMap<>();
-    private static final ConcurrentLinkedQueue<KeyBinding> PENDING_RELEASE = new ConcurrentLinkedQueue<>();
+    private static final Map<String, KeyMapping> COMMANDS = new HashMap<>();
+    private static final ConcurrentLinkedQueue<KeyMapping> PENDING_RELEASE = new ConcurrentLinkedQueue<>();
     private static boolean initialized = false;
 
     private static void init() {
         if (initialized) return;
-        var options = MinecraftClient.getInstance().options;
+        var options = Minecraft.getInstance().options;
 
         // Superseded by BIND:<id>, which needs no table at all. Kept because
         // an app build predating the change still sends these, and because the
@@ -90,25 +89,25 @@ public class CommandDispatcher {
         //
         // Codes are matched literally and are never a single digit, so they
         // can't collide with the "1".."9" hotbar codes parsed ahead of them.
-        COMMANDS.put("INVENTORY", options.inventoryKey);
-        COMMANDS.put("DROP", options.dropKey);
-        COMMANDS.put("SWAP", options.swapHandsKey);
-        COMMANDS.put("USE", options.useKey);
-        COMMANDS.put("ATTACK", options.attackKey);
-        COMMANDS.put("JUMP", options.jumpKey);
-        COMMANDS.put("SNEAK", options.sneakKey);
+        COMMANDS.put("INVENTORY", options.keyInventory);
+        COMMANDS.put("DROP", options.keyDrop);
+        COMMANDS.put("SWAP", options.keySwapOffhand);
+        COMMANDS.put("USE", options.keyUse);
+        COMMANDS.put("ATTACK", options.keyAttack);
+        COMMANDS.put("JUMP", options.keyJump);
+        COMMANDS.put("SNEAK", options.keyShift);
 
         // Superseded single-letter codes, kept so a companion app built before
         // the rename still works against this mod. "R"/"G" are preserved with
         // the behaviour they actually had, not the behaviour their names imply
         // -- the point is not to break an installed app, not to bless the old
         // naming. Safe to delete once both halves are known to be updated.
-        COMMANDS.put("E", options.inventoryKey);
-        COMMANDS.put("R", options.swapHandsKey);
-        COMMANDS.put("G", options.dropKey);
-        COMMANDS.put("H", options.useKey);
-        COMMANDS.put("K", options.attackKey);
-        COMMANDS.put("F", options.swapHandsKey);
+        COMMANDS.put("E", options.keyInventory);
+        COMMANDS.put("R", options.keySwapOffhand);
+        COMMANDS.put("G", options.keyDrop);
+        COMMANDS.put("H", options.keyUse);
+        COMMANDS.put("K", options.keyAttack);
+        COMMANDS.put("F", options.keySwapOffhand);
 
         initialized = true;
     }
@@ -119,9 +118,9 @@ public class CommandDispatcher {
      */
     public static void tick() {
         init();
-        KeyBinding toRelease;
+        KeyMapping toRelease;
         while ((toRelease = PENDING_RELEASE.poll()) != null) {
-            toRelease.setPressed(false);
+            toRelease.setDown(false);
         }
     }
 
@@ -129,7 +128,7 @@ public class CommandDispatcher {
     public static void dispatch(String code) {
         init();
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
 
         // Vanilla only drains keybindings (handleInputEvents) while no screen
         // or overlay is up. Queuing presses anyway would let them pile up
@@ -137,14 +136,14 @@ public class CommandDispatcher {
         // their inventory -- ten taps of the drop key throwing ten stacks.
         // Dropping them is the honest behaviour: the game wouldn't have acted
         // on a real keypress at that moment either.
-        if (client.currentScreen != null) {
+        if (client.gui.screen() != null) {
             System.out.println("[ThorHud] Ignoring command '" + code + "' -- a screen is open");
             return;
         }
 
         Integer slot = parseHotbarSlot(code);
         if (slot != null) {
-            pressForOneTick(client.options.hotbarKeys[slot - 1]);
+            pressForOneTick(client.options.keyHotbarSlots[slot - 1]);
             return;
         }
 
@@ -153,7 +152,7 @@ public class CommandDispatcher {
             // byId covers every binding ever constructed, modded ones included,
             // so nothing has to be registered here for a mod's action to be
             // usable from the second screen.
-            KeyBinding byId = KeyBinding.byId(id);
+            KeyMapping byId = KeyMapping.get(id);
             if (byId == null) {
                 // Reachable in normal use: the app persists ids, so removing
                 // the mod that owned one leaves a button pointing at nothing.
@@ -164,7 +163,7 @@ public class CommandDispatcher {
             return;
         }
 
-        KeyBinding binding = COMMANDS.get(code);
+        KeyMapping binding = COMMANDS.get(code);
         if (binding == null) {
             System.out.println("[ThorHud] Unknown command code: " + code);
             return;
@@ -179,14 +178,14 @@ public class CommandDispatcher {
         return c - '0';
     }
 
-    private static void pressForOneTick(KeyBinding binding) {
+    private static void pressForOneTick(KeyMapping binding) {
         // Discrete actions (hotbar, inventory, drop, swap) read wasPressed(),
         // which drains this counter and ignores the held flag entirely.
         KeyBindingAccessor accessor = (KeyBindingAccessor) binding;
         accessor.thorhud$setTimesPressed(accessor.thorhud$getTimesPressed() + 1);
 
         // Continuous actions (attack, use) read isPressed() instead.
-        binding.setPressed(true);
+        binding.setDown(true);
         PENDING_RELEASE.add(binding);
     }
 }
