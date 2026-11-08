@@ -1,12 +1,11 @@
 package com.exojosh.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.util.Identifier;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Base64;
 import java.util.Optional;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
 
 /**
  * Reads an item's texture PNG straight from Minecraft's own resource
@@ -41,7 +40,7 @@ import java.util.Optional;
 public class ItemIconResolver {
 
     public static Optional<String> resolveBase64Png(String itemId) {
-        Identifier item = Identifier.of(itemId);
+        Identifier item = Identifier.parse(itemId);
 
         Optional<String> fromItemFolder = tryTexturePath(item, "item");
         if (fromItemFolder.isPresent()) return fromItemFolder;
@@ -51,14 +50,14 @@ public class ItemIconResolver {
 
     private static Optional<String> tryTexturePath(Identifier item, String folder) {
         try {
-            Identifier texture = Identifier.of(item.getNamespace(), "textures/" + folder + "/" + item.getPath() + ".png");
+            Identifier texture = Identifier.fromNamespaceAndPath(item.getNamespace(), "textures/" + folder + "/" + item.getPath() + ".png");
 
-            var resourceOpt = MinecraftClient.getInstance().getResourceManager().getResource(texture);
+            var resourceOpt = Minecraft.getInstance().getResourceManager().getResource(texture);
             if (resourceOpt.isEmpty()) {
                 return Optional.empty();
             }
 
-            try (InputStream in = resourceOpt.get().getInputStream()) {
+            try (InputStream in = resourceOpt.get().open()) {
                 byte[] bytes = in.readAllBytes();
                 return Optional.of(Base64.getEncoder().encodeToString(bytes));
             }

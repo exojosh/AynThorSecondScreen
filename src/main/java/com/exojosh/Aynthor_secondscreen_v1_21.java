@@ -1,9 +1,7 @@
 package com.exojosh;
 
 import net.fabricmc.api.ModInitializer;
-
-import net.minecraft.util.Identifier;
-
+import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +23,6 @@ public class Aynthor_secondscreen_v1_21 implements ModInitializer {
 	}
 
 	public static Identifier id(String path) {
-		return Identifier.of(MOD_ID, path);
+		return Identifier.fromNamespaceAndPath(MOD_ID, path);
 	}
 }

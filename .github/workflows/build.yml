@@ -22,7 +22,7 @@ jobs:
           # README asks contributors to install. Building on 25 meant CI was
           # exercising a compiler nobody develops against, so a failure there
           # said nothing useful and a pass guaranteed nothing locally.
-          java-version: '21'
+          java-version: '25'
           distribution: 'microsoft'
       - name: make gradle wrapper executable
         run: chmod +x ./gradlew

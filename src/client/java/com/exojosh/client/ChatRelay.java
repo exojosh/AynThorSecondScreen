@@ -1,12 +1,12 @@
 package com.exojosh.client;
 
 import net.fabricmc.fabric.api.client.message.v1.ClientReceiveMessageEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.StringVisitable;
-import net.minecraft.text.Style;
-import net.minecraft.text.Text;
-import net.minecraft.text.TextColor;
-import net.minecraft.util.StringHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FormattedText;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.util.StringUtil;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayDeque;
@@ -128,20 +128,20 @@ public final class ChatRelay {
      * client's dispatcher, and sending "/tp …" as a chat message would just say
      * it out loud.
      */
-    public static void send(MinecraftClient client, String rawMessage) {
+    public static void send(Minecraft client, String rawMessage) {
         if (client.player == null) return;
 
-        String message = StringHelper.truncateChat(StringUtils.normalizeSpace(rawMessage.trim()));
+        String message = StringUtil.trimChatMessage(StringUtils.normalizeSpace(rawMessage.trim()));
         if (message.isEmpty()) return;
 
         if (message.startsWith("/")) {
-            client.player.networkHandler.sendChatCommand(message.substring(1));
+            client.player.connection.sendCommand(message.substring(1));
         } else {
-            client.player.networkHandler.sendChatMessage(message);
+            client.player.connection.sendChat(message);
         }
     }
 
-    private static void relay(Text message) {
+    private static void relay(Component message) {
         List<Segment> segments = flatten(message);
         if (segments.isEmpty()) return;
 
@@ -171,13 +171,13 @@ public final class ChatRelay {
      * usually far more fragmented than it looks -- a translated death message
      * can arrive as a dozen same-styled nodes.
      */
-    private static List<Segment> flatten(Text message) {
+    private static List<Segment> flatten(Component message) {
         List<Segment> segments = new ArrayList<>();
 
-        StringVisitable.StyledVisitor<Object> visitor = (style, asString) -> {
+        FormattedText.StyledContentConsumer<Object> visitor = (style, asString) -> {
             if (!asString.isEmpty()) {
                 TextColor color = style.getColor();
-                Integer rgb = color == null ? null : color.getRgb();
+                Integer rgb = color == null ? null : color.getValue();
 
                 if (!segments.isEmpty()) {
                     Segment last = segments.get(segments.size() - 1);

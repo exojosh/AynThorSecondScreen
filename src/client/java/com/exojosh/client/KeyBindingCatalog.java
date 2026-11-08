@@ -1,12 +1,11 @@
 package com.exojosh.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.text.Text;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 
 /**
  * Every key binding the game knows about, as data the companion app can put in
@@ -71,19 +70,19 @@ public final class KeyBindingCatalog {
 
     /** The current bindings, sorted by category then label, as the picker shows them. */
     public static List<Entry> snapshot() {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client.options == null) return List.of();
 
         List<Entry> entries = new ArrayList<>();
-        for (KeyBinding binding : client.options.allKeys) {
+        for (KeyMapping binding : client.options.keyMappings) {
             if (binding == null) continue;
             entries.add(new Entry(
-                    binding.getId(),
+                    binding.getName(),
                     // Vanilla's own controls screen renders the binding name
                     // this way; the id doubles as its translation key.
-                    Text.translatable(binding.getId()).getString(),
-                    binding.getCategory().getLabel().getString(),
-                    binding.getBoundKeyLocalizedText().getString(),
+                    Component.translatable(binding.getName()).getString(),
+                    binding.getCategory().label().getString(),
+                    binding.getTranslatedKeyMessage().getString(),
                     binding.isUnbound()
             ));
         }

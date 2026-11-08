@@ -1,18 +1,18 @@
 package com.exojosh.client.mixin;
 
-import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.KeyMapping;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 
 /**
  * Exposes {@code KeyBinding.timesPressed}, the private counter behind
- * {@link KeyBinding#wasPressed()}.
+ * {@link KeyMapping#consumeClick()}.
  *
  * <h2>Why this is needed</h2>
  * A KeyBinding tracks two independent things:
  *
  *   - {@code pressed}: is the key held down right now, read by isPressed().
- *     Public setter, {@link KeyBinding#setPressed(boolean)}.
+ *     Public setter, {@link KeyMapping#setDown(boolean)}.
  *   - {@code timesPressed}: how many discrete presses happened since anyone
  *     last looked, consumed by wasPressed(). Private, and only incremented by
  *     the static {@code onKeyPressed(InputUtil.Key)} hook that real keyboard
@@ -32,12 +32,12 @@ import org.spongepowered.asm.mixin.gen.Accessor;
  * has bound, which matters here because these presses originate from a
  * second screen, not a keyboard.
  */
-@Mixin(KeyBinding.class)
+@Mixin(KeyMapping.class)
 public interface KeyBindingAccessor {
 
-    @Accessor("timesPressed")
+    @Accessor("clickCount")
     int thorhud$getTimesPressed();
 
-    @Accessor("timesPressed")
+    @Accessor("clickCount")
     void thorhud$setTimesPressed(int timesPressed);
 }
